@@ -52,7 +52,7 @@ export interface JobListing {
 interface SearchState {
   // Search configuration
   userId: number;
-  searchUrls: string[];
+  searchUrls: { url: string; priority: number }[]; // Priority queue for search URLs
   processedUrls: string[];
   currentUrlIndex: number;
   
@@ -62,11 +62,25 @@ interface SearchState {
   
   // Pagination
   createdAt: Date;
+  
+  // Dynamic properties for tracking pagination state
+  [key: string]: any; // Allow dynamic properties like 'empty_pages_query'
 }
+
+import Bottleneck from 'bottleneck';
 
 export class WorkableScraper {
   private readonly BASE_URL = 'https://jobs.workable.com/search';
   private searchStates: Map<string, SearchState> = new Map();
+  
+  // Global rate limiter for all Workable requests
+  private limiter = new Bottleneck({
+    maxConcurrent: 5,      // Maximum 5 concurrent requests
+    minTime: 100,          // 100ms between requests
+    reservoir: 100,        // 100 requests per minute
+    reservoirRefreshAmount: 100,
+    reservoirRefreshInterval: 60 * 1000 // Refresh every minute
+  });
   
   // Track problematic URLs that failed during introspection or application
   private problemUrls = new Map<string, Array<{
@@ -291,8 +305,16 @@ export class WorkableScraper {
    * This prioritizes the most relevant job searches first
    */
   private initializeSearchState(userProfile: UserProfile | null, maxPages: number = 3): SearchState {
-    const searchUrls = this.generateSearchUrls(userProfile, maxPages);
-    console.log(`Generated ${searchUrls.length} search URLs for user profile`);
+    const urls = this.generateSearchUrls(userProfile, maxPages);
+    console.log(`Generated ${urls.length} search URLs for user profile`);
+    
+    // Convert string URLs to URL objects with priorities
+    const searchUrls = urls.map((url, index) => {
+      // Assign higher priority to earlier URLs (primary search terms)
+      // Priority is inverse to index, so first URLs have higher priority
+      const priority = 1 - (index / urls.length);
+      return { url, priority };
+    });
     
     return {
       userId: userProfile?.userId || 0,
@@ -329,15 +351,20 @@ export class WorkableScraper {
   }
   
   /**
-   * Remove search states older than 1 hour
+   * Remove search states older than 24 hours or completed ones
    */
   private cleanupOldSearchStates(): void {
     const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     
     // Use forEach to avoid for...of iteration compatibility issues
     this.searchStates.forEach((state, token) => {
-      if (state.createdAt < oneHourAgo) {
+      // Keep search states for up to 24 hours
+      // Only remove if it's older than 24 hours AND all URLs have been processed
+      // (meaning there's no unprocessed URLs left)
+      if (state.createdAt < oneDayAgo && 
+          !state.searchUrls.some(u => !state.processedUrls.includes(u.url))) {
+        console.log(`Removing search state ${token} (${state.totalJobsFound} jobs found) - older than 24h with no pending URLs`);
         this.searchStates.delete(token);
       }
     });
@@ -416,8 +443,9 @@ export class WorkableScraper {
   }
   
   /**
-   * Generate all search URLs for a user profile
+   * Generate initial search URLs for a user profile
    * This creates multiple searches based on user's desired roles
+   * Returns string URLs that will be converted to {url, priority} objects
    */
   generateSearchUrls(profile: UserProfile | null, maxPages: number = 3): string[] {
     const searchUrls: string[] = [];
@@ -460,16 +488,15 @@ export class WorkableScraper {
     console.log(`Using job titles for search: ${jobTitles.join(', ')}`);
     const searchQueries = jobTitles.slice(0, 3);
     
+    // Start with just the first page for each job title
+    // We'll dynamically generate more pages as needed
     for (const jobTitle of searchQueries) {
-      // Add searches for pages 1 to maxPages
-      for (let page = 1; page <= maxPages; page++) {
-        // Use the correct parameter names for the Workable API
-        console.log(`Searching for job title "${jobTitle}" on page ${page}`);
-        searchUrls.push(this.buildSearchUrl(profile, { 
-          query: jobTitle,  // This will be used to build the 'query' parameter
-          page 
-        }));
-      }
+      // Start with page 1 for each job title
+      console.log(`Adding initial search for job title "${jobTitle}" on page 1`);
+      searchUrls.push(this.buildSearchUrl(profile, { 
+        query: jobTitle,  // This will be used to build the 'query' parameter
+        page: 1
+      }));
     }
     
     return searchUrls;
@@ -744,80 +771,106 @@ export class WorkableScraper {
    * @param jobDetailTimeoutMs Timeout for fetching each individual job detail page.
    * @returns Array of job listings found on the page.
    */
+  /**
+   * Scrape job listings from a Workable search URL, with rate limiting and priority-based pagination
+   * 
+   * @param searchUrl The URL of the search results page
+   * @param state Optional search state for tracking duplicates and pagination
+   * @param jobDetailTimeoutMs Timeout for each job detail fetch operation
+   * @returns Array of job listings found on the page
+   */
   async scrapeJobsFromSearchUrl(
     searchUrl: string, 
     state?: SearchState,
-    jobDetailTimeoutMs: number = 5000
+    jobDetailTimeoutMs: number = 8000 // Increased timeout
   ): Promise<JobListing[]> {
     try {
-      // Log the exact URL and show how it's structured for debugging
+      // Parse the URL for analysis and extraction of components
       const urlObj = new URL(searchUrl);
+      const query = urlObj.searchParams.get('query') || '';
+      const currentPage = parseInt(urlObj.searchParams.get('page') || '1');
+      
       console.log(`Fetching job listings from: ${searchUrl}`);
-      console.log(`URL Analysis: 
-         - Base: ${urlObj.origin}${urlObj.pathname}
-         - Query Parameters: ${urlObj.search}
-         - Parameter breakdown:`);
       
-      urlObj.searchParams.forEach((value, key) => {
-        console.log(`           ${key}: ${value}`);
-      });
-      
-      // Construct proper headers to mimic a browser
-      const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Referer': 'https://jobs.workable.com/'
-      };
-      
-      // Fetch the search results HTML
-      const response = await fetch(searchUrl, { headers });
+      // Use the rate limiter for ALL network requests to avoid 429 errors
+      const response = await this.limiter.schedule(() => fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Referer': 'https://jobs.workable.com/'
+        }
+      }));
       
       if (!response.ok) {
-        console.error(`Failed to fetch search results: ${response.statusText}, Status: ${response.status}`);
+        // IMPROVED RATE LIMIT HANDLING: Use exponential backoff and priority queue
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('retry-after') || '10', 10);
+          console.warn(`Rate limited (429) when fetching ${searchUrl}. Retry after ${retryAfter}s`);
+          
+          // Log for analysis
+          this.logProblemUrl(searchUrl, "rate_limited_429", {
+            timestamp: new Date().toISOString(),
+            retryAfter
+          });
+          
+          // Add URL back to queue with lower priority and rate limit tracking
+          if (state) {
+            // Track rate limit attempts for this URL
+            const rateLimitKey = `rate_limit_${query}_page${currentPage}`;
+            const attempts = (state[rateLimitKey] || 0) + 1;
+            state[rateLimitKey] = attempts;
+            
+            // Calculate exponential backoff priority - the more attempts, the lower the priority
+            const backoffPriority = Math.max(0.05, 0.5 / Math.pow(2, attempts));
+            
+            // Queue for retry with exponential backoff priority
+            console.log(`Re-queueing rate-limited URL with priority ${backoffPriority.toFixed(3)} (attempt ${attempts})`);
+            state.searchUrls.push({
+              url: searchUrl,
+              priority: backoffPriority
+            });
+            
+            // Don't consider this processed - we need to retry
+            state.processedUrls = state.processedUrls.filter(url => url !== searchUrl);
+          }
+          return [];
+        }
+        
+        console.error(`Failed to fetch: ${response.statusText}, Status: ${response.status}`);
         return [];
       }
       
       const html = await response.text();
-      
-      // Save length for debugging
       const htmlLength = html.length;
       
-      // Output the first 200 characters to help debug
-      console.log(`Response HTML preview (total length: ${htmlLength}): ${html.substring(0, 200)}...`);
-      
-      // Save entire HTML to a file for debugging
+      // Debug info
       if (htmlLength < 1000) {
-        console.log(`WARNING: HTML response is suspiciously short (${htmlLength} chars). Full HTML: ${html}`);
+        console.log(`WARNING: HTML response is suspiciously short (${htmlLength} chars).`);
       }
       
-      // Parse job links from the search results page
+      // Extract job links from the page - we'll combine multiple extraction methods
       const jobLinks: string[] = [];
       
-      // First method: Regular expression to match job card links to Workable job pages
-      // This regex captures URLs with or without job title slugs
+      // Method 1: Direct URL extraction with regex
       const jobUrlRegex = /https:\/\/jobs\.workable\.com\/view\/[A-Za-z0-9]+(?:\/[^"'\s]+)?/g;
       let match;
-      
       while ((match = jobUrlRegex.exec(html)) !== null) {
         jobLinks.push(match[0]);
       }
       
-      // Second method: Look for job cards with data-ui="job-card" attribute (newer format)
-      // This regex looks for links that contain /view/ID with optional job title
+      // Method 2: HTML link parsing
       const jobCardRegex = /<a [^>]*href="([^"]*\/view\/[A-Za-z0-9]+(?:\/[^"'\s]+)?)"[^>]*>/g;
       while ((match = jobCardRegex.exec(html)) !== null) {
         const jobUrl = match[1];
         if (jobUrl.startsWith('/')) {
-          // Handle relative URLs
           jobLinks.push(`https://jobs.workable.com${jobUrl}`);
         } else if (jobUrl.startsWith('http')) {
-          // Handle absolute URLs
           jobLinks.push(jobUrl);
         }
       }
       
-      // Third method: Look for structured data in script tags (JSON-LD)
+      // Method 3: JSON-LD extraction (structured data)
       const scriptRegex = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g;
       while ((match = scriptRegex.exec(html)) !== null) {
         try {
@@ -830,62 +883,142 @@ export class WorkableScraper {
         }
       }
       
-      console.log(`Found ${jobLinks.length} job links in search results`);
-      
-      // Deduplicate the links (just in case)
+      // Deduplicate the links
       const uniqueLinks = Array.from(new Set(jobLinks));
       
-      // For each job link, fetch job details (limit to 5 jobs per page for speed)
-      const jobListings: JobListing[] = [];
+      // NEW: Calculate page metrics for tracking effectiveness
+      const totalJobsOnPage = uniqueLinks.length;
+      console.log(`Found ${totalJobsOnPage} unique job links on page ${currentPage} for query "${query}"`);
       
-      // Deduplicate and filter out already processed jobs
-      const MAX_JOBS_PER_PAGE = 20; // Increased from 5 to 20 jobs per page
-      
-      // Filter out jobs already processed if we have state
+      // Filter out already processed jobs
       let newLinks = uniqueLinks;
       if (state) {
         newLinks = uniqueLinks.filter(link => {
-          // Extract potential ID or use full URL for uniqueness check
           const potentialId = link.split('/').pop();
           return potentialId && !state.jobIds.has(potentialId);
         });
       }
       
-      // Limit the number of jobs to fetch details for concurrently
-      const jobsToProcess = newLinks.slice(0, MAX_JOBS_PER_PAGE);
+      // NEW: Track new vs total for effectiveness metrics
+      const newJobsFound = newLinks.length;
+      const duplicateJobsFound = totalJobsOnPage - newJobsFound;
       
-      console.log(`Processing ${jobsToProcess.length} out of ${uniqueLinks.length} jobs for faster initial response`);
+      // Calculate effectiveness score (0-1): ratio of new jobs to total jobs
+      // This helps prioritize which search paths are most productive
+      // Higher = more effective search, lower = more duplicates/exhausted
+      const effectivenessScore = totalJobsOnPage > 0 
+        ? newJobsFound / totalJobsOnPage 
+        : 0;
       
-      if (jobsToProcess.length === 0) {
-        console.log(`No new job links found on ${searchUrl} to fetch details for.`);
-        return [];
+      console.log(`Page effectiveness: ${(effectivenessScore * 100).toFixed(1)}% (${newJobsFound} new, ${duplicateJobsFound} duplicates)`);
+      
+      // Store effectiveness metrics in search state
+      if (state) {
+        // Track effectiveness by query
+        const queryEffectivenessKey = `effectiveness_${query}`;
+        
+        // Use exponential moving average to smooth effectiveness values
+        const previousEffectiveness = state[queryEffectivenessKey] || 0;
+        const alpha = 0.3; // Weighting for new values (0.3 = 30% weight to new value)
+        
+        state[queryEffectivenessKey] = (previousEffectiveness * (1 - alpha)) + (effectivenessScore * alpha);
+        
+        // Record the last page processed 
+        state[`last_page_${query}`] = currentPage;
       }
       
-      console.log(`Attempting to fetch details for ${jobsToProcess.length} job links concurrently...`);
+      // Limit the number of jobs to fetch at once to reduce load
+      const MAX_JOBS_PER_PAGE = 20;
+      const jobsToProcess = newLinks.slice(0, MAX_JOBS_PER_PAGE);
       
-      // Create an array of promises, each fetching details for one job with timeout
+      // Handle case of no new jobs on this page
+      if (jobsToProcess.length === 0) {
+        if (state) {
+          // Track consecutive empty pages to know when to stop
+          const emptyPagesKey = `empty_pages_${query}`;
+          const consecutiveEmptyPages = (state[emptyPagesKey] || 0) + 1;
+          state[emptyPagesKey] = consecutiveEmptyPages;
+          
+          // Adaptive page limit - if query has been effective, we'll check more pages
+          let maxEmptyPages = 3;
+          
+          if (state[`effectiveness_${query}`] > 0.4) {
+            // For high-yield queries, go deeper
+            maxEmptyPages = 5;
+          }
+          
+          if (totalJobsOnPage === 0) {
+            // Truly empty page = end of results, stop pagination
+            console.log(`Empty page (no jobs) for query "${query}". End of results reached.`);
+            return [];
+          } else if (consecutiveEmptyPages < maxEmptyPages) {
+            // All duplicates but not at limit, continue to next page with lower priority
+            console.log(`All ${totalJobsOnPage} jobs already processed. This is empty page #${consecutiveEmptyPages}/${maxEmptyPages}`);
+            
+            // Add next page with lower priority
+            const nextPageUrl = this.generateNextPageUrl(searchUrl, currentPage + 1);
+            if (nextPageUrl && !state.searchUrls.some(u => u.url === nextPageUrl) && !state.processedUrls.includes(nextPageUrl)) {
+              // Lower priority based on consecutive empty pages
+              const priority = Math.max(0.2, 0.8 - (consecutiveEmptyPages * 0.2));
+              
+              state.searchUrls.push({ url: nextPageUrl, priority });
+              console.log(`Added next page with reduced priority ${priority.toFixed(2)} due to consecutive empty pages`);
+            }
+          } else {
+            // Reached max empty pages, stop pagination for this query
+            console.log(`Reached ${maxEmptyPages} consecutive pages with all duplicate jobs. Stopping pagination for "${query}"`);
+          }
+        }
+        
+        // Mark this URL as processed
+        if (state) {
+          state.processedUrls.push(searchUrl);
+        }
+        
+        return [];
+      } else if (state) {
+        // Found new jobs, reset empty pages counter
+        state[`empty_pages_${query}`] = 0;
+      }
+      
+      // Fetch job details concurrently
+      console.log(`Fetching details for ${jobsToProcess.length} jobs concurrently...`);
+      
+      // Create array of promises, each fetching job details
       const detailFetchPromises = jobsToProcess.map(jobLink =>
-        this.fetchJobDetailsWithTimeout(jobLink, jobDetailTimeoutMs)
-          .then(jobDetail => ({ link: jobLink, detail: jobDetail })) // Keep link for context
+        this.limiter.schedule(() => this.fetchJobDetailsWithTimeout(jobLink, jobDetailTimeoutMs))
+          .then(jobDetail => ({ link: jobLink, detail: jobDetail }))
       );
       
-      // Use Promise.allSettled to wait for all fetches to complete or fail/timeout
+      // Wait for all requests to complete or timeout
       const results = await Promise.allSettled(detailFetchPromises);
       
       // Process the results
+      const jobListings: JobListing[] = [];
+      let successfulDetailsCount = 0;
+      
       results.forEach(result => {
         if (result.status === 'fulfilled' && result.value.detail) {
           // Successfully fetched job details
           const jobDetail = result.value.detail;
           const jobLink = result.value.link;
+          successfulDetailsCount++;
           
-          // Add to jobIds set in state to prevent re-processing
+          // Mark job ID as processed
           if (state) {
             const potentialId = jobLink.split('/').pop();
             if (potentialId) state.jobIds.add(potentialId);
           }
           
-          // Map WorkableJob to JobListing format
+          // Calculate match score for job
+          const matchScore = this.calculateInitialMatchScore({
+            title: jobDetail.title,
+            company: jobDetail.company, 
+            description: jobDetail.description,
+            location: jobDetail.location
+          });
+          
+          // Add to job listings
           jobListings.push({
             jobTitle: jobDetail.title,
             company: jobDetail.company,
@@ -893,31 +1026,111 @@ export class WorkableScraper {
             applyUrl: jobLink,
             location: jobDetail.location,
             source: 'workable',
-            matchScore: this.calculateInitialMatchScore({
-              title: jobDetail.title,
-              company: jobDetail.company,
-              description: jobDetail.description,
-              location: jobDetail.location
-            })
+            matchScore
           });
-        } else if (result.status === 'rejected') {
-          // Log errors from fetchJobDetailsWithTimeout (already logged internally)
-          console.error(`Failed to process job link (reason: ${result.reason})`);
-        } else if (result.status === 'fulfilled' && !result.value.detail) {
-          // Fetch completed but returned null (e.g., timeout, non-ok status, invalid data)
-          console.warn(`Fetching completed but no valid details returned for job link: ${result.value.link}`);
         }
       });
       
-      console.log(`Successfully fetched details for ${jobListings.length} jobs from ${searchUrl}.`);
+      console.log(`Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl}`);
+      
+      // Update search state with results
       if (state) {
-        state.totalJobsFound += jobListings.length; // Update total count in state
+        // Mark this URL as processed
+        state.processedUrls.push(searchUrl);
+        
+        // Update total job count
+        state.totalJobsFound += jobListings.length;
+        
+        // Calculate average match score for this page (if jobs found)
+        const avgMatchScore = jobListings.length > 0
+          ? jobListings.reduce((sum, job) => sum + (job.matchScore || 0), 0) / jobListings.length
+          : 0;
+        
+        // Combined effectiveness score includes both job yield and match quality
+        const combinedEffectiveness = effectivenessScore * (avgMatchScore / 100);
+        
+        // IMPROVED PAGINATION STRATEGY: Prioritize based on quality and quantity
+        // Continue pagination if:
+        // 1. Found new jobs (effectiveness > 0)
+        // 2. Not hit the maximum page limit
+        // 3. Query is not exhausted (consecutively empty pages < limit)
+        const MAX_PAGES = 50; // Hard limit
+        
+        if (currentPage < MAX_PAGES && 
+            (effectivenessScore > 0 || totalJobsOnPage === 0)) {
+          
+          const nextPageUrl = this.generateNextPageUrl(searchUrl, currentPage + 1);
+          
+          if (nextPageUrl && 
+              !state.searchUrls.some(u => u.url === nextPageUrl) && 
+              !state.processedUrls.includes(nextPageUrl)) {
+            
+            // Calculate priority for next page:
+            // - Higher effectiveness = higher priority
+            // - Higher match scores = higher priority
+            // - First few pages get higher priority by default
+            let basePriority = effectivenessScore;
+            
+            // Boost priority for high-quality results
+            if (avgMatchScore > 80) basePriority += 0.2;
+            
+            // Cap at 0.9 to ensure initial search URLs maintain highest priority
+            const priority = Math.min(0.9, Math.max(0.1, basePriority));
+            
+            // Add to queue with calculated priority
+            state.searchUrls.push({ url: nextPageUrl, priority });
+            
+            console.log(`Added next page ${currentPage + 1} to queue with priority ${priority.toFixed(2)}`);
+          }
+        } else {
+          console.log(`Not adding next page: reached limit (${currentPage}/${MAX_PAGES}) or low effectiveness`);
+        }
       }
       
       return jobListings;
     } catch (error) {
-      console.error(`Error scraping jobs from search URL ${searchUrl}:`, error);
+      console.error(`Error scraping jobs from ${searchUrl}:`, error);
+      
+      // Add error handling - re-queue with lower priority on failure
+      if (state) {
+        const errorKey = `error_count_${searchUrl}`;
+        const errorCount = (state[errorKey] || 0) + 1;
+        state[errorKey] = errorCount;
+        
+        // Only retry a limited number of times
+        if (errorCount <= 3) {
+          // Re-queue with decreasing priority
+          const retryPriority = 0.3 / errorCount;
+          state.searchUrls.push({ 
+            url: searchUrl, 
+            priority: retryPriority
+          });
+          console.log(`URL fetch failed, re-queued with priority ${retryPriority.toFixed(2)} (attempt ${errorCount})`);
+        } else {
+          console.log(`URL fetch failed ${errorCount} times, not retrying: ${searchUrl}`);
+          // Still mark as processed to avoid infinite retries
+          state.processedUrls.push(searchUrl);
+        }
+      }
+      
       return [];
+    }
+  }
+  
+  /**
+   * Helper method to generate the URL for the next page of search results
+   */
+  private generateNextPageUrl(currentUrl: string, nextPageNum: number): string | null {
+    try {
+      const urlObj = new URL(currentUrl);
+      
+      // Update or add the page parameter
+      urlObj.searchParams.set('page', nextPageNum.toString());
+      
+      return urlObj.toString();
+    } catch (error) {
+      console.error("Error generating next page URL:", error);
+      return null;
     }
   }
 
@@ -1154,6 +1367,7 @@ export class WorkableScraper {
   /**
    * Execute a batched search based on the current search state
    * This allows us to fetch jobs in smaller batches for faster initial results
+   * Uses priority queue for more intelligent job search ordering
    */
   async executeBatchedSearch(
     searchState: SearchState,
@@ -1167,13 +1381,19 @@ export class WorkableScraper {
     hasMore: boolean;
     nextSearchState: SearchState;
   }> {
-    const { maxJobs = 30, maxSearches = 3, progressCallback } = options;
+    const { maxJobs = 50, maxSearches = 5, progressCallback } = options;
     
     // Make a copy of the search state to avoid modifying the original
     const stateCopy: SearchState = {
       ...searchState,
+      searchUrls: [...searchState.searchUrls], // Deep clone the URLs array
       processedUrls: [...searchState.processedUrls],
-      jobIds: new Set(searchState.jobIds)
+      jobIds: new Set(searchState.jobIds),
+      // Copy other dynamic properties
+      ...Object.fromEntries(
+        Object.entries(searchState)
+          .filter(([key]) => !['searchUrls', 'processedUrls', 'jobIds'].includes(key))
+      )
     };
     
     // Initialize results
@@ -1183,19 +1403,40 @@ export class WorkableScraper {
     let searchesCompleted = 0;
     let hasMore = true;
     
+    // IMPROVED APPROACH: Sort search URLs by priority before processing
+    stateCopy.searchUrls.sort((a, b) => b.priority - a.priority);
+    
+    console.log(`Starting batched search with ${stateCopy.searchUrls.length} URLs in queue`);
+    // Log the top 3 URLs with their priorities for debugging
+    stateCopy.searchUrls.slice(0, 3).forEach((urlObj, i) => {
+      console.log(`Queue #${i+1}: ${urlObj.url} (priority: ${urlObj.priority.toFixed(2)})`);
+    });
+    
     // Process search URLs up to maxSearches or until we hit maxJobs
+    const processedUrlsInThisBatch = new Set<string>();
+    
     while (
-      stateCopy.currentUrlIndex < stateCopy.searchUrls.length && 
+      stateCopy.searchUrls.length > 0 && 
       searchesCompleted < maxSearches && 
       jobResults.length < maxJobs
     ) {
-      const searchUrl = stateCopy.searchUrls[stateCopy.currentUrlIndex];
+      // Choose the highest priority URL that hasn't been processed
+      // This approach uses priority instead of sequential index
+      const urlIndex = stateCopy.searchUrls.findIndex(urlObj => {
+        // Check if this URL has already been processed
+        const isProcessed = stateCopy.processedUrls.some(url => url === urlObj.url);
+        const isInCurrentBatch = processedUrlsInThisBatch.has(urlObj.url);
+        return !isProcessed && !isInCurrentBatch;
+      });
       
-      // Skip if this URL has already been processed
-      if (stateCopy.processedUrls.includes(searchUrl)) {
-        stateCopy.currentUrlIndex++;
-        continue;
+      // If no unprocessed URLs available, break the loop
+      if (urlIndex === -1) {
+        console.log(`No more unprocessed URLs available. Breaking the batch loop.`);
+        break;
       }
+      
+      const urlObj = stateCopy.searchUrls[urlIndex];
+      const searchUrl = urlObj.url;
       
       // Update progress
       if (progressCallback) {
@@ -1203,34 +1444,39 @@ export class WorkableScraper {
           current: searchesCompleted + 1,
           total: Math.min(maxSearches, stateCopy.searchUrls.length),
           status: `Searching for jobs (batch ${searchesCompleted + 1} of ${Math.min(maxSearches, stateCopy.searchUrls.length)})`,
-          jobs: jobResults
+          jobs: jobResults,
+          priority: urlObj.priority
         });
       }
       
-      // Fetch jobs from search URL with improved concurrent fetching
-      console.log(`Searching Workable with URL: ${searchUrl}`);
+      // Fetch jobs from search URL with improved concurrent fetching and rate limiting
+      console.log(`Searching Workable with URL: ${searchUrl} (priority: ${urlObj.priority.toFixed(2)})`);
       // Pass the search state to track duplicate jobs and use a longer timeout
       const jobDetailTimeoutMs = 8000; // 8 seconds for background fetches
       const newJobs = await this.scrapeJobsFromSearchUrl(searchUrl, stateCopy, jobDetailTimeoutMs);
       
-      // Add to processed URLs
+      // Mark URL as processed in this batch
+      processedUrlsInThisBatch.add(searchUrl);
       stateCopy.processedUrls.push(searchUrl);
       searchesCompleted++;
       
       // Add jobs to results up to max limit
-      // Note: Deduplication now happens in scrapeJobsFromSearchUrl with state
+      // Note: Deduplication happens in scrapeJobsFromSearchUrl with state
       const jobsToAdd = newJobs.slice(0, maxJobs - jobResults.length);
       jobResults.push(...jobsToAdd);
       
-      // Move to next URL
-      stateCopy.currentUrlIndex++;
+      console.log(`Found ${newJobs.length} jobs from ${searchUrl}, added ${jobsToAdd.length} to results`);
     }
     
-    // Update search state
-    stateCopy.totalJobsFound += jobResults.length;
+    // Remove the URLs we've processed from the search URLs queue
+    stateCopy.searchUrls = stateCopy.searchUrls.filter(urlObj => {
+      // Check if this URL is in the batch of processed URLs
+      const isInBatch = Array.from(processedUrlsInThisBatch).some(url => url === urlObj.url);
+      return !isInBatch;
+    });
     
     // Check if we have more jobs to fetch
-    hasMore = stateCopy.currentUrlIndex < stateCopy.searchUrls.length;
+    hasMore = stateCopy.searchUrls.length > 0;
     
     // Return results
     return {
@@ -1252,8 +1498,8 @@ export class WorkableScraper {
     progressCallback?: (progress: { current: number, total: number, status: string, jobs?: JobListing[], percentage?: number }) => void,
     options: {
       pageSize?: number;      // Number of jobs per page (default: 20)
-      maxInitialJobs?: number; // Maximum jobs for initial response (default: 30)
-      searchDepth?: number;    // Number of pages to search (default: 1)
+      maxInitialJobs?: number; // Maximum jobs for initial response (default: 50)
+      searchDepth?: number;    // Number of pages to search (default: 2)
       continueToken?: string;  // Token to resume search
     } = {}
   ): Promise<{
@@ -1266,7 +1512,7 @@ export class WorkableScraper {
       const {
         pageSize = 20,
         maxInitialJobs = 50, // Increased from 30 to 50
-        searchDepth = 2,     // Increased from 1 to 2 to search more pages
+        searchDepth = 3,     // Increased from 1 to 3 to search more pages
         continueToken
       } = options;
       
@@ -1287,7 +1533,20 @@ export class WorkableScraper {
           searchState = this.initializeSearchState(userProfile || null, searchDepth);
         } else {
           searchState = savedState;
-          console.log(`Resuming search with token: ${continueToken}`);
+          console.log(`Resuming search with token: ${continueToken} (${savedState.searchUrls.length} URLs in queue)`);
+          
+          // Report any priority changes that may have happened
+          if (savedState.searchUrls.length > 0) {
+            // Get top 3 URLs by priority
+            const topUrls = [...savedState.searchUrls]
+              .sort((a, b) => b.priority - a.priority)
+              .slice(0, 3);
+              
+            console.log(`Top priority URLs in resumed search:`);
+            topUrls.forEach((urlObj, i) => {
+              console.log(`  ${i+1}. ${urlObj.url.substring(0, 60)}... (priority: ${urlObj.priority.toFixed(2)})`);
+            });
+          }
         }
       } else {
         // Start a new search
@@ -1306,6 +1565,14 @@ export class WorkableScraper {
         
         // Initialize a new search state
         searchState = this.initializeSearchState(userProfile, searchDepth);
+        
+        // Log initial search state
+        if (searchState.searchUrls.length > 0) {
+          console.log(`Initial search with ${searchState.searchUrls.length} URLs`);
+          searchState.searchUrls.slice(0, 3).forEach((urlObj, i) => {
+            console.log(`  ${i+1}. ${urlObj.url} (priority: ${urlObj.priority.toFixed(2)})`);
+          });
+        }
       }
       
       // Execute batch search with progress updates

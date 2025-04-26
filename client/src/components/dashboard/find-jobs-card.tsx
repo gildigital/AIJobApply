@@ -66,8 +66,8 @@ export default function FindJobsCard() {
       try {
         const response = await apiRequest("POST", "/api/auto-apply/find-jobs", {
           continueToken: options?.continueToken,
-          pageSize: 10, // Smaller page size for faster response
-          maxInitialJobs: 15 // Fewer initial jobs for quicker display
+          pageSize: 20, // Increased page size for more comprehensive results
+          maxInitialJobs: 50 // Increased from 15 to 50 for more comprehensive results
         });
         const data = await response.json();
         return data;

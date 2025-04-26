@@ -738,9 +738,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updateProgress,
         {
           continueToken,
-          pageSize,
-          maxInitialJobs,
-          searchDepth: continueToken ? 3 : 1 // Deeper search when loading more
+          pageSize: 20, // Use larger page size to get more results per request
+          maxInitialJobs: continueToken ? 100 : 50, // Significantly increased job limit
+          searchDepth: continueToken ? 10 : 5 // Much deeper search to prevent getting stuck
         }
       );
       
