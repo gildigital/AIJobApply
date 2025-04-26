@@ -1,0 +1,97 @@
+# 🧠 AIJobApply Phase 2: Resume-to-Job AI Matching
+
+Now that we’ve integrated real job listings from Adzuna, we want to implement a robust AI-powered matching algorithm to score jobs based on how well they align with a user’s resume and profile.
+
+We have access to both **OpenAI GPT-4o** and **Anthropic Claude 3.5 Sonnet**.
+
+---
+
+## ✅ Objectives
+
+### ✅ 1. Add `matchScore` Calculation System
+
+Create a service function:
+```ts
+export async function scoreJobFit(userId: number, resumeText: string, job: JobListing): Promise<{ score: number, explanation: string }>
+
+This function should:
+
+Use GPT-4o or Claude to analyze:
+
+The user’s resume (already parsed into text)
+
+The job description
+
+Return:
+
+score: 0–100% match score
+
+explanation: short bullet list explaining why it's a good or bad match (3–5 bullets)
+
+✅ 2. Integration in Auto-Apply Agent
+Update the startAutoApply() pipeline:
+
+After pulling jobs from searchJobs()
+
+For each job:
+
+Call scoreJobFit(userId, resumeText, job)
+
+If score >= 70, apply
+
+Insert job with matchScore and explanation into jobTracker
+
+✅ 3. Store in Database
+Update the job_tracker schema to include:
+
+matchScore: number
+matchExplanation: string
+
+Also ensure this is accessible on the frontend (used for tooltips or expandable cards in the tracker).
+
+✅ 4. Matching Prompt Example (GPT or Claude)
+Use a consistent AI prompt like:
+
+You are an expert hiring manager. Given a user’s resume and a job description, determine how well they match.
+
+Return a percentage match (0–100%) and a short list of reasons.
+
+Return JSON in this shape:
+
+{
+  "matchScore": 82,
+  "reasons": [
+    "Strong experience with React and TypeScript",
+    "Worked in a SaaS startup with CI/CD pipelines",
+    "No experience with AWS Lambda (minor miss)",
+    "Great alignment in education background"
+  ]
+}
+
+Feed in:
+
+resumeText (from user upload)
+
+job.description
+
+Use GPT-4o or Claude based on availability (default to OpenAI if both keys are available).
+
+🔒 Notes
+API keys for OpenAI and Anthropic are available in .env
+
+Use axios or fetch with proper auth headers
+
+Make sure token usage is tracked to avoid runaway cost
+
+📦 Deliverables
+scoreJobFit() service using GPT-4o or Claude
+
+Updated job_tracker schema with matchScore and matchExplanation
+
+Auto-apply agent updated to use match scoring
+
+Frontend displays match % and explanation in expandable job rows
+
+Keep the AI calls efficient, cache results per user+job to avoid duplicates, and make it easy to swap models later.
+
+

@@ -1,0 +1,465 @@
+import { 
+  users, type User, type InsertUser,
+  applicationAnswers, type ApplicationAnswer, type InsertApplicationAnswer,
+  resumes, type Resume, type InsertResume,
+  jobTracker, type JobTracker, type InsertJobTracker,
+  jobQueue, type JobQueue, type InsertJobQueue,
+  userProfiles, type UserProfile, type InsertUserProfile,
+  portfolios, type Portfolio, type InsertPortfolio
+} from "@shared/schema";
+import { db } from "./db";
+import { eq, and, gte, lt, count, desc, asc, or } from "drizzle-orm";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "./db";
+
+const PostgresSessionStore = connectPgSimple(session);
+
+export interface IStorage {
+  // User Methods
+  getUser(id: number): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, data: Partial<User>): Promise<User | undefined>;
+  
+  // User Profile Methods
+  getUserProfile(userId: number): Promise<UserProfile | undefined>;
+  createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
+  updateUserProfile(userId: number, data: Partial<UserProfile>): Promise<UserProfile | undefined>;
+  calculateProfileCompleteness(userId: number): Promise<number>;
+  
+  // Portfolio Methods
+  getUserPortfolios(userId: number): Promise<Portfolio[]>;
+  getPortfolio(id: number): Promise<Portfolio | undefined>;
+  createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio>;
+  updatePortfolio(id: number, data: Partial<Portfolio>): Promise<Portfolio | undefined>;
+  deletePortfolio(id: number): Promise<boolean>;
+  
+  // Application Answers Methods
+  getApplicationAnswers(userId: number): Promise<ApplicationAnswer[]>;
+  createApplicationAnswer(answer: InsertApplicationAnswer): Promise<ApplicationAnswer>;
+  updateApplicationAnswer(id: number, data: Partial<ApplicationAnswer>): Promise<ApplicationAnswer | undefined>;
+  deleteApplicationAnswer(id: number): Promise<boolean>;
+  
+  // Resume Methods
+  getResume(userId: number): Promise<Resume | undefined>;
+  createResume(resume: InsertResume): Promise<Resume>;
+  updateResume(userId: number, data: Partial<InsertResume>): Promise<Resume | undefined>;
+  
+  // Job Tracker Methods
+  getJobs(userId: number): Promise<JobTracker[]>;
+  getJob(id: number): Promise<JobTracker | undefined>;
+  createJob(job: InsertJobTracker): Promise<JobTracker>;
+  updateJob(id: number, data: Partial<JobTracker>): Promise<JobTracker | undefined>;
+  deleteJob(id: number): Promise<boolean>;
+  getJobsAppliedToday(userId: number, startDate: Date): Promise<number>;
+  
+  // Job Queue Methods
+  enqueueJob(job: InsertJobQueue): Promise<JobQueue>;
+  enqueueJobs(jobs: InsertJobQueue[]): Promise<JobQueue[]>;
+  getNextJobsFromQueue(limit: number): Promise<JobQueue[]>;
+  getQueuedJobsForUser(userId: number): Promise<JobQueue[]>;
+  updateQueuedJob(id: number, data: Partial<JobQueue>): Promise<JobQueue | undefined>;
+  dequeueJob(id: number): Promise<boolean>;
+  
+  // Session Store
+  sessionStore: any;
+}
+
+export class DatabaseStorage implements IStorage {
+  sessionStore: any;
+
+  constructor() {
+    this.sessionStore = new PostgresSessionStore({ 
+      pool, 
+      createTableIfMissing: true 
+    });
+  }
+
+  // User Methods
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
+  }
+  
+  async getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.stripeCustomerId, stripeCustomerId));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values({ ...insertUser, onboardingCompleted: false })
+      .returning();
+    return user;
+  }
+
+  async updateUser(id: number, data: Partial<User>): Promise<User | undefined> {
+    const [updatedUser] = await db
+      .update(users)
+      .set(data)
+      .where(eq(users.id, id))
+      .returning();
+    return updatedUser || undefined;
+  }
+
+  // Application Answers Methods
+  async getApplicationAnswers(userId: number): Promise<ApplicationAnswer[]> {
+    return await db
+      .select()
+      .from(applicationAnswers)
+      .where(eq(applicationAnswers.userId, userId));
+  }
+
+  async createApplicationAnswer(answer: InsertApplicationAnswer): Promise<ApplicationAnswer> {
+    const [newAnswer] = await db
+      .insert(applicationAnswers)
+      .values(answer)
+      .returning();
+    return newAnswer;
+  }
+
+  async updateApplicationAnswer(id: number, data: Partial<ApplicationAnswer>): Promise<ApplicationAnswer | undefined> {
+    const [updatedAnswer] = await db
+      .update(applicationAnswers)
+      .set(data)
+      .where(eq(applicationAnswers.id, id))
+      .returning();
+    return updatedAnswer || undefined;
+  }
+
+  async deleteApplicationAnswer(id: number): Promise<boolean> {
+    await db
+      .delete(applicationAnswers)
+      .where(eq(applicationAnswers.id, id));
+    return true;
+  }
+
+  // Resume Methods
+  async getResume(userId: number): Promise<Resume | undefined> {
+    const [resume] = await db
+      .select()
+      .from(resumes)
+      .where(eq(resumes.userId, userId));
+    return resume || undefined;
+  }
+
+  async createResume(resume: InsertResume): Promise<Resume> {
+    // First delete any existing resume for this user
+    await db
+      .delete(resumes)
+      .where(eq(resumes.userId, resume.userId));
+      
+    // Then create the new one
+    const [newResume] = await db
+      .insert(resumes)
+      .values({
+        ...resume,
+        uploadedAt: new Date()
+      })
+      .returning();
+    return newResume;
+  }
+
+  async updateResume(userId: number, data: Partial<InsertResume>): Promise<Resume | undefined> {
+    const [updatedResume] = await db
+      .update(resumes)
+      .set(data)
+      .where(eq(resumes.userId, userId))
+      .returning();
+    return updatedResume || undefined;
+  }
+
+  // Job Tracker Methods
+  async getJobs(userId: number): Promise<JobTracker[]> {
+    return await db
+      .select()
+      .from(jobTracker)
+      .where(eq(jobTracker.userId, userId));
+  }
+
+  async getJob(id: number): Promise<JobTracker | undefined> {
+    const [job] = await db
+      .select()
+      .from(jobTracker)
+      .where(eq(jobTracker.id, id));
+    return job || undefined;
+  }
+
+  async createJob(job: InsertJobTracker): Promise<JobTracker> {
+    const now = new Date();
+    const [newJob] = await db
+      .insert(jobTracker)
+      .values({
+        ...job,
+        createdAt: now,
+        updatedAt: now
+      })
+      .returning();
+    return newJob;
+  }
+
+  async updateJob(id: number, data: Partial<JobTracker>): Promise<JobTracker | undefined> {
+    try {
+      console.log("Updating job:", id);
+      
+      // Add the updated timestamp
+      const updateData = {
+        ...data,
+        updatedAt: new Date()
+      };
+      
+      // Use standard Drizzle update method
+      const [updatedJob] = await db
+        .update(jobTracker)
+        .set(updateData)
+        .where(eq(jobTracker.id, id))
+        .returning();
+      
+      console.log("Update result:", updatedJob ? "Success" : "No job updated");
+      return updatedJob || undefined;
+    } catch (error) {
+      console.error("Error in updateJob:", error);
+      throw error;
+    }
+  }
+
+  async deleteJob(id: number): Promise<boolean> {
+    await db
+      .delete(jobTracker)
+      .where(eq(jobTracker.id, id));
+    return true;
+  }
+  
+  async getJobsAppliedToday(userId: number, startDate: Date): Promise<number> {
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 1);
+    
+    // Get count of jobs with status 'applied' created today
+    const result = await db
+      .select({ count: count() })
+      .from(jobTracker)
+      .where(
+        and(
+          eq(jobTracker.userId, userId),
+          eq(jobTracker.status, 'applied'),
+          gte(jobTracker.createdAt, startDate),
+          lt(jobTracker.createdAt, endDate)
+        )
+      );
+    
+    return result[0]?.count || 0;
+  }
+
+  // Job Queue Methods
+  async enqueueJob(job: InsertJobQueue): Promise<JobQueue> {
+    const [newJob] = await db
+      .insert(jobQueue)
+      .values(job)
+      .returning();
+    return newJob;
+  }
+
+  async enqueueJobs(jobs: InsertJobQueue[]): Promise<JobQueue[]> {
+    if (!jobs.length) return [];
+    
+    const newJobs = await db
+      .insert(jobQueue)
+      .values(jobs)
+      .returning();
+    return newJobs;
+  }
+
+  async getNextJobsFromQueue(limit: number): Promise<JobQueue[]> {
+    // Get pending jobs ordered by priority (highest first), then created time (oldest first)
+    return await db
+      .select()
+      .from(jobQueue)
+      .where(eq(jobQueue.status, 'pending'))
+      .orderBy(desc(jobQueue.priority), asc(jobQueue.createdAt))
+      .limit(limit);
+  }
+
+  async getQueuedJobsForUser(userId: number): Promise<JobQueue[]> {
+    return await db
+      .select()
+      .from(jobQueue)
+      .where(and(
+        eq(jobQueue.userId, userId),
+        or(
+          eq(jobQueue.status, 'pending'),
+          eq(jobQueue.status, 'processing')
+        )
+      ))
+      .orderBy(desc(jobQueue.priority), asc(jobQueue.createdAt));
+  }
+
+  async updateQueuedJob(id: number, data: Partial<JobQueue>): Promise<JobQueue | undefined> {
+    const [updatedJob] = await db
+      .update(jobQueue)
+      .set(data)
+      .where(eq(jobQueue.id, id))
+      .returning();
+    return updatedJob || undefined;
+  }
+
+  async dequeueJob(id: number): Promise<boolean> {
+    await db
+      .delete(jobQueue)
+      .where(eq(jobQueue.id, id));
+    return true;
+  }
+  
+  // User Profile Methods
+  async getUserProfile(userId: number): Promise<UserProfile | undefined> {
+    const [profile] = await db
+      .select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId));
+    return profile || undefined;
+  }
+
+  async createUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
+    // Check if profile already exists
+    const existingProfile = await this.getUserProfile(profile.userId);
+    
+    if (existingProfile) {
+      // Update existing profile
+      return await this.updateUserProfile(profile.userId, profile);
+    }
+    
+    // Calculate initial profile completeness
+    const completeness = await this.calculateInitialProfileCompleteness(profile);
+    
+    // Create new profile
+    const [newProfile] = await db
+      .insert(userProfiles)
+      .values({
+        ...profile,
+        profileCompleteness: completeness,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .returning();
+    
+    return newProfile;
+  }
+
+  async updateUserProfile(userId: number, data: Partial<UserProfile>): Promise<UserProfile | undefined> {
+    // Recalculate profile completeness
+    let completeness = await this.calculateProfileCompleteness(userId);
+    
+    const [updatedProfile] = await db
+      .update(userProfiles)
+      .set({
+        ...data,
+        profileCompleteness: completeness,
+        updatedAt: new Date(),
+      })
+      .where(eq(userProfiles.userId, userId))
+      .returning();
+    
+    return updatedProfile || undefined;
+  }
+
+  // Helper function to calculate initial profile completeness
+  private async calculateInitialProfileCompleteness(profile: InsertUserProfile): Promise<number> {
+    const fields = Object.entries(profile).filter(([key, value]) => {
+      // Exclude system fields and userId from calculation
+      return !['userId', 'createdAt', 'updatedAt', 'profileCompleteness'].includes(key);
+    });
+    
+    // Count non-empty fields
+    const filledFields = fields.filter(([key, value]) => {
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      return value !== null && value !== undefined && value !== '';
+    });
+    
+    // Calculate percentage
+    return Math.round((filledFields.length / fields.length) * 100);
+  }
+
+  async calculateProfileCompleteness(userId: number): Promise<number> {
+    const profile = await this.getUserProfile(userId);
+    
+    if (!profile) {
+      return 0;
+    }
+    
+    const fields = Object.entries(profile).filter(([key, value]) => {
+      // Exclude system fields and userId from calculation
+      return !['id', 'userId', 'createdAt', 'updatedAt', 'profileCompleteness'].includes(key);
+    });
+    
+    // Count non-empty fields
+    const filledFields = fields.filter(([key, value]) => {
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      return value !== null && value !== undefined && value !== '';
+    });
+    
+    // Calculate percentage
+    return Math.round((filledFields.length / fields.length) * 100);
+  }
+  
+  // Portfolio Methods
+  async getUserPortfolios(userId: number): Promise<Portfolio[]> {
+    return await db
+      .select()
+      .from(portfolios)
+      .where(eq(portfolios.userId, userId));
+  }
+
+  async getPortfolio(id: number): Promise<Portfolio | undefined> {
+    const [portfolio] = await db
+      .select()
+      .from(portfolios)
+      .where(eq(portfolios.id, id));
+    return portfolio || undefined;
+  }
+
+  async createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio> {
+    const [newPortfolio] = await db
+      .insert(portfolios)
+      .values({
+        ...portfolio,
+        uploadedAt: new Date(),
+      })
+      .returning();
+    return newPortfolio;
+  }
+
+  async updatePortfolio(id: number, data: Partial<Portfolio>): Promise<Portfolio | undefined> {
+    const [updatedPortfolio] = await db
+      .update(portfolios)
+      .set(data)
+      .where(eq(portfolios.id, id))
+      .returning();
+    return updatedPortfolio || undefined;
+  }
+
+  async deletePortfolio(id: number): Promise<boolean> {
+    await db
+      .delete(portfolios)
+      .where(eq(portfolios.id, id));
+    return true;
+  }
+}
+
+export const storage = new DatabaseStorage();

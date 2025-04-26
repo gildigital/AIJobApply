@@ -1,0 +1,81 @@
+# 📊 AIJobApply Phase 5 – Job Queue Status UI Component
+
+We’ve implemented a background worker and job queue for auto-applying to jobs. Now we want to build a **dashboard component** that shows users the **status of their queue** and allows them to trigger or monitor auto-apply progress.
+
+---
+
+## ✅ 1. Create a Dashboard Component
+
+Add a new UI section to the dashboard:
+
+**Title**: Auto-Apply Queue
+
+This component should:
+
+- Display total jobs in queue
+- Show:
+  - Number of pending, processing, completed, and failed
+  - Daily usage: "12 / 40 jobs used today" (based on plan)
+- Include a small status feed:
+  - “✅ Applied to Vouched – Full Stack Engineer”
+  - “🔄 Processing Upbound – Frontend Engineer”
+  - “❌ Failed to apply to Indeed job #12345”
+
+---
+
+## ✅ 2. Connect to API Endpoints
+
+Use these endpoints already implemented:
+
+- `GET /api/job-queue/status`  
+  Returns:
+  ```ts
+  {
+    totalQueued: number;
+    pending: number;
+    processing: number;
+    completed: number;
+    failed: number;
+    jobsToday: number;
+    planLimit: number;
+    recentLogs: Array<{
+      jobId: string;
+      status: "pending" | "processing" | "completed" | "failed";
+      message: string;
+      updatedAt: string;
+    }>
+  }
+
+```POST /api/job-queue/enqueue```
+To start queueing new jobs
+
+✅ 3. Controls and Feedback
+Add buttons:
+
+🔁 “Start Auto-Applying” – calls /enqueue
+
+🛑 “Pause Auto-Apply” – optional, for user control
+
+🧪 (Optional) Show a timer: “Next apply in 3s…”
+
+Display toast notifications for key events:
+
+“Auto-apply started”
+
+“You’ve reached your daily apply limit”
+
+“Application submitted successfully”
+
+✅ 4. UI Design Notes
+Use TailwindCSS or shadcn/ui
+
+Make it mobile-friendly and responsive
+
+Optional: Add a loading spinner or heartbeat when worker is active
+
+Show a progress bar if multiple jobs are in-flight
+
+🎯 Outcome
+This component gives users live feedback and control over their auto-apply queue. It brings transparency and trust to the automation process, and highlights their plan tier benefits (especially for Gold users with faster queues).
+
+Please implement the component using React and Tailwind, connected to the existing job queue endpoints.

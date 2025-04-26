@@ -1,0 +1,72 @@
+Hey Replit App Team,
+
+We've completed a significant update to the Playwright Worker service! It's now much better at understanding the structure of Workable application forms, particularly those with custom questions, radio buttons, and checkboxes.
+
+This update changes what you receive from the /introspect endpoint and how you should structure the formData payload for the /submit endpoint for these specific field types.
+
+Key Changes in the Playwright Worker:
+Enhanced Introspection (/introspect):
+
+The Worker now does a more sophisticated job of finding the actual question text for custom fields (like those with QA_... names) by looking at associated labels or aria-labelledby attributes.
+For Radio button groups and Checkboxes, the Worker now tries to identify all available options within the group.
+The schema returned by /introspect for these fields will now include an options array:
+Example Schema Entry (from /introspect):
+
+JSON
+
+// For a Radio Button Group
+{
+  "name": "QA_6266359",
+  "label": "Do you currently play video games on either PC, Console or Nintendo?", // <-- Improved Label!
+  "type": "radio", // Or 'checkbox', or 'fieldset'
+  "required": true,
+  "options": [ // <-- NEW: Array of available options
+    { "label": "YES", "value": "true" },
+    { "label": "NO", "value": "false" }
+  ]
+}
+
+// Standard field schema (remains similar)
+{
+  "name": "cover_letter",
+  "label": "Cover letter",
+  "type": "textarea",
+  "required": false
+  // Note: No 'options' array for non-multiple choice fields
+}
+Improved Dynamic Filling (/submit):
+
+The /submit endpoint is now updated to correctly handle filling fields based on their detected type: text, textarea, select, file, checkbox, and radio.
+It specifically knows how to select the correct option within a radio group based on the value you provide in the formData.
+Action Required in Your Replit App Logic:
+You need to update your Phase 1 (Schema Processing) and Phase 2 (Data Preparation) logic to accommodate these changes:
+
+Phase 1: Processing the Updated Schema:
+
+When you receive the fields array from the /introspect response, iterate through it.
+For each field object:
+Continue to store the name, label, type, and required status.
+New: Check if the field object contains an options array. If it does, store this array as it lists the possible answers (label and the critical value attribute needed for submission).
+Use the improved label from the schema (like the full question text) to understand what the field is asking.
+Phase 2: Preparing the formData for /submit:
+
+Continue to build the formData object where keys are the name attributes from the schema.
+Crucially, when preparing data for Radio Button fields (type: "radio" or type: "fieldset" with options):
+Look at the options array in the schema for that field name.
+Decide which option you want to select based on the question text (label) and the available option labels.
+The value you put in the formData payload for that field's name must be the value property of the chosen option from the schema's options array.
+Example: If you want to answer "YES" to the "Do you play video games..." question (which has the name QA_6266359), and the schema's options are [{"label": "YES", "value": "true"}, {"label": "NO", "value": "false"}], your formData should include: "QA_6266359": "true".
+For Checkbox fields (type: "checkbox" with options):
+If it's a single checkbox by name, provide true or false to check/uncheck it.
+If it's a group of checkboxes with the same name, you might need to provide an array of the values you want to check, or handle them individually if their names/values are distinct. The current Worker logic attempts to handle boolean or a single string value matching an option's value.
+For other field types (text, textarea, email, tel, select, file):
+Continue to provide the appropriate string value (text, textarea, etc.), file path (file), or selected option value/label (select) as before.
+Ensure the keys in formData exactly match the name from the schema.
+Summary for your Replit App:
+Call /introspect --> Get schema with better labels and options for multiple choice.
+Use the schema to understand fields and available answers.
+Prepare formData: Use schema names as keys. For radio/checkbox, put the chosen option's value in the payload.
+Call /submit with the prepared formData.
+This update makes your application logic more powerful as it can now understand and answer the custom questions posed by Workable forms dynamically!
+
+Please test the full introspection and submission flow, especially for jobs with custom questions using radio buttons or checkboxes. Let us know if any issues arise with the new schema format or filling process.

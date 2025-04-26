@@ -1,0 +1,110 @@
+# 🌐 AIJobApply Phase 1: Job API Integration (Adzuna)
+
+We are replacing our mock job data system with real job scraping using external APIs.
+
+---
+
+## 🧠 Context
+
+We are building [AIJobApply.com](http://aijobapply.com), an AI-powered job application SaaS with:
+- User onboarding + resume uploads
+- Auto-apply agent
+- Match scoring system
+- Subscription management via Stripe
+- Job Tracker with match %, status, history
+
+Currently, job data is mocked from `mock-jobs.ts`. We want to replace that with real job listings from **Adzuna**.
+
+---
+
+## ✅ Objectives
+
+### ✅ 1. Create Job Scraper Service
+
+Create a new file:  
+`/server/services/job-scraper.ts`
+
+Export the main function:
+
+```ts
+export async function searchJobs(userId: number, searchParams: {
+  keywords?: string[],
+  location?: string,
+  radius?: number,
+  limit?: number
+}): Promise<JobListing[]>
+
+This function should:
+
+Fetch the user profile and resume (via storage)
+
+Extract relevant keywords (stub logic for now)
+
+Call the Adzuna Job API using the keywords/location
+
+Return jobs in this format:
+
+type JobListing = {
+  jobTitle: string;
+  company: string;
+  location: string;
+  description: string;
+  applyUrl: string;
+  postedAt?: string;
+  source: "adzuna";
+  externalJobId: string;
+}
+
+✅ 2. Add Adzuna API Logic
+In job-scraper.ts, add the following:
+
+async function searchAdzunaJobs(keywords: string[], location: string): Promise<JobListing[]> {
+  const query = keywords.join(" ");
+  const apiUrl = `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=10&what=${encodeURIComponent(query)}&where=${encodeURIComponent(location)}&content-type=application/json`;
+
+  const res = await fetch(apiUrl);
+  const data = await res.json();
+
+  return data.results.map((job: any) => ({
+    jobTitle: job.title,
+    company: job.company.display_name,
+    location: job.location.display_name,
+    description: job.description,
+    applyUrl: job.redirect_url,
+    postedAt: job.created,
+    source: "adzuna",
+    externalJobId: job.id,
+  }));
+}
+
+Add Adzuna credentials to .env:
+
+ADZUNA_APP_ID=your_app_id
+ADZUNA_APP_KEY=your_api_key
+
+
+✅ 3. Replace Mock Calls
+Update the auto-apply agent or job explorer page to call:
+
+const jobs = await searchJobs(userId, { location: "San Diego", limit: 10 });
+
+Replace any reference to mock job data (mock-jobs.ts) with this real call.
+
+✅ 4. Add Fallback Handling
+If Adzuna returns nothing, fallback to mock data or show a toast
+
+Use try/catch around the API call
+
+📝 Notes
+You can use any HTTP client (fetch, axios, etc.)
+
+We’ll later extend this to support LinkedIn, RemoteOK, and ZipRecruiter
+
+📦 Deliverables
+/server/services/job-scraper.ts with searchJobs() + searchAdzunaJobs()
+
+.env entries for ADZUNA_APP_ID and ADZUNA_APP_KEY
+
+All mock job calls replaced with real job API fetches
+
+Keep everything modular so we can add more sources in Phase 2.

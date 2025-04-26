@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workable Application Diagnostics</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            color: #333;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            overflow: auto;
+            font-size: 14px;
+            border: 1px solid #ddd;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-item {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #eee;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .test-url-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .test-url-form input, .test-url-form select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Workable Application Diagnostics</h1>
+            <p>This tool helps diagnose why 95% of Workable job applications are failing.</p>
+            
+            <div class="actions">
+                <button id="addMockDataBtn">Add Mock Data</button>
+                <button id="viewStatsBtn">View Statistics</button>
+            </div>
+            
+            <div id="statsContainer" style="display: none;">
+                <h2>Application Statistics</h2>
+                <div class="stat-grid" id="statGrid">
+                    <!-- Stats will be inserted here -->
+                </div>
+                
+                <h3>Problem Types</h3>
+                <div id="problemTypesContainer"></div>
+                
+                <h3>URL Pattern Analysis</h3>
+                <div id="urlPatternContainer"></div>
+                
+                <h3>Recent Problems</h3>
+                <div id="recentProblemsContainer"></div>
+                
+                <h3>Successful Applications</h3>
+                <div id="successesContainer"></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Test Specific URL</h2>
+            <div class="test-url-form">
+                <input type="text" id="testUrl" placeholder="Enter Workable job URL to test" />
+                <select id="testResult">
+                    <option value="success">Success</option>
+                    <option value="failure">Failure</option>
+                </select>
+                <select id="errorType" style="display: none;">
+                    <option value="introspection_error">Introspection Error</option>
+                    <option value="introspection_exception">Introspection Exception</option>
+                    <option value="form_submission_error">Form Submission Error</option>
+                    <option value="unexpected_redirect">Unexpected Redirect</option>
+                    <option value="timeout_error">Timeout Error</option>
+                </select>
+                <input type="number" id="fieldsCount" placeholder="Number of fields (for success)" value="8" min="1" max="20" />
+                <button id="testUrlBtn">Test URL</button>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>Raw Response</h2>
+            <pre id="responseContainer">No data yet.</pre>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get DOM elements
+            const addMockDataBtn = document.getElementById('addMockDataBtn');
+            const viewStatsBtn = document.getElementById('viewStatsBtn');
+            const statsContainer = document.getElementById('statsContainer');
+            const responseContainer = document.getElementById('responseContainer');
+            const statGrid = document.getElementById('statGrid');
+            const problemTypesContainer = document.getElementById('problemTypesContainer');
+            const urlPatternContainer = document.getElementById('urlPatternContainer');
+            const recentProblemsContainer = document.getElementById('recentProblemsContainer');
+            const successesContainer = document.getElementById('successesContainer');
+            
+            // Test URL form elements
+            const testUrlInput = document.getElementById('testUrl');
+            const testResultSelect = document.getElementById('testResult');
+            const errorTypeSelect = document.getElementById('errorType');
+            const fieldsCountInput = document.getElementById('fieldsCount');
+            const testUrlBtn = document.getElementById('testUrlBtn');
+            
+            // Show/hide error type based on test result
+            testResultSelect.addEventListener('change', function() {
+                if (this.value === 'failure') {
+                    errorTypeSelect.style.display = 'block';
+                    fieldsCountInput.style.display = 'none';
+                } else {
+                    errorTypeSelect.style.display = 'none';
+                    fieldsCountInput.style.display = 'block';
+                }
+            });
+            
+            // Add mock data
+            addMockDataBtn.addEventListener('click', async function() {
+                try {
+                    const response = await fetch('/api/application-stats/mock', {
+                        method: 'POST',
+                        credentials: 'include'
+                    });
+                    
+                    const data = await response.json();
+                    responseContainer.textContent = JSON.stringify(data, null, 2);
+                    
+                    // Show stats
+                    displayStats(data.stats);
+                    statsContainer.style.display = 'block';
+                } catch (error) {
+                    responseContainer.textContent = 'Error: ' + error.message;
+                }
+            });
+            
+            // View statistics
+            viewStatsBtn.addEventListener('click', async function() {
+                try {
+                    const response = await fetch('/api/application-stats', {
+                        credentials: 'include'
+                    });
+                    
+                    const data = await response.json();
+                    responseContainer.textContent = JSON.stringify(data, null, 2);
+                    
+                    // Show stats
+                    displayStats(data.stats);
+                    statsContainer.style.display = 'block';
+                } catch (error) {
+                    responseContainer.textContent = 'Error: ' + error.message;
+                }
+            });
+            
+            // Test URL
+            testUrlBtn.addEventListener('click', async function() {
+                const url = testUrlInput.value.trim();
+                if (!url) {
+                    alert('Please enter a URL to test');
+                    return;
+                }
+                
+                const isSuccess = testResultSelect.value === 'success';
+                let details = {};
+                
+                if (isSuccess) {
+                    details.fieldsCount = parseInt(fieldsCountInput.value);
+                } else {
+                    details.errorType = errorTypeSelect.value;
+                    details.error = `Test ${errorTypeSelect.value} error`;
+                }
+                
+                try {
+                    const response = await fetch('/api/application-stats/test-url', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            url,
+                            isSuccess,
+                            details
+                        }),
+                        credentials: 'include'
+                    });
+                    
+                    const data = await response.json();
+                    responseContainer.textContent = JSON.stringify(data, null, 2);
+                    
+                    // Show stats
+                    displayStats(data.stats);
+                    statsContainer.style.display = 'block';
+                } catch (error) {
+                    responseContainer.textContent = 'Error: ' + error.message;
+                }
+            });
+            
+            // Function to display stats
+            function displayStats(stats) {
+                if (!stats) {
+                    statGrid.innerHTML = '<div class="stat-item">No statistics available</div>';
+                    return;
+                }
+                
+                // Display basic stats
+                statGrid.innerHTML = `
+                    <div class="stat-item">
+                        <div>Total Problem URLs</div>
+                        <div class="stat-value">${stats.totalProblemUrls}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div>Total Successful URLs</div>
+                        <div class="stat-value">${stats.totalSuccessfulUrls}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div>Success Rate</div>
+                        <div class="stat-value">${stats.successRate.toFixed(1)}%</div>
+                    </div>
+                `;
+                
+                // Display problem types
+                let problemTypesHtml = '<table><tr><th>Problem Type</th><th>Count</th></tr>';
+                for (const [type, count] of Object.entries(stats.problemTypes)) {
+                    problemTypesHtml += `<tr><td>${type}</td><td>${count}</td></tr>`;
+                }
+                problemTypesHtml += '</table>';
+                problemTypesContainer.innerHTML = problemTypesHtml;
+                
+                // Display URL pattern analysis
+                if (stats.patterns) {
+                    let patternsHtml = '<h4>Domain Success Rates</h4>';
+                    patternsHtml += '<table><tr><th>Domain Pattern</th><th>Success Rate</th></tr>';
+                    for (const [domain, rate] of Object.entries(stats.patterns.domainSuccessRates)) {
+                        patternsHtml += `<tr><td>${domain}</td><td>${rate.toFixed(1)}%</td></tr>`;
+                    }
+                    patternsHtml += '</table>';
+                    
+                    if (stats.patterns.companyAnalysis && stats.patterns.companyAnalysis.length > 0) {
+                        patternsHtml += '<h4>Company Analysis</h4>';
+                        patternsHtml += '<table><tr><th>Company</th><th>Failure Rate</th><th>Total Attempts</th></tr>';
+                        for (const company of stats.patterns.companyAnalysis) {
+                            patternsHtml += `<tr><td>${company.company}</td><td>${company.failureRate.toFixed(1)}%</td><td>${company.total}</td></tr>`;
+                        }
+                        patternsHtml += '</table>';
+                    }
+                    
+                    urlPatternContainer.innerHTML = patternsHtml;
+                } else {
+                    urlPatternContainer.innerHTML = '<p>No pattern analysis available</p>';
+                }
+                
+                // Display recent problems
+                if (stats.recentProblems && stats.recentProblems.length > 0) {
+                    let problemsHtml = '<table><tr><th>URL</th><th>Error Type</th></tr>';
+                    for (const problem of stats.recentProblems) {
+                        problemsHtml += `<tr><td>${problem.url}</td><td>${problem.latestError.type}</td></tr>`;
+                    }
+                    problemsHtml += '</table>';
+                    recentProblemsContainer.innerHTML = problemsHtml;
+                } else {
+                    recentProblemsContainer.innerHTML = '<p>No recent problems</p>';
+                }
+                
+                // Display successful applications
+                if (stats.recentSuccesses && stats.recentSuccesses.length > 0) {
+                    let successesHtml = '<table><tr><th>URL</th><th>Fields Count</th></tr>';
+                    for (const success of stats.recentSuccesses) {
+                        successesHtml += `<tr><td>${success.url}</td><td>${success.fields}</td></tr>`;
+                    }
+                    successesHtml += '</table>';
+                    successesContainer.innerHTML = successesHtml;
+                } else {
+                    successesContainer.innerHTML = '<p>No recent successes</p>';
+                }
+            }
+        });
+    </script>
+</body>
+</html>

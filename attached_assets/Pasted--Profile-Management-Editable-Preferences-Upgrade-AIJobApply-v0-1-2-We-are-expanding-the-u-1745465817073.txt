@@ -1,0 +1,83 @@
+# 🛠 Profile Management & Editable Preferences Upgrade (AIJobApply v0.1.2)
+
+We are expanding the user profile to support full editing of job preferences and auto-apply information. This ensures that users can update their preferences at any time, and that we store all data required to apply to jobs on their behalf.
+
+---
+
+## ✏️ 1. Make Profile Fields Editable
+
+Convert the existing onboarding responses into editable fields in a dedicated **Profile Settings** section.
+
+### Job & Application Preferences
+
+| Field                        | Type       | Notes |
+|-----------------------------|------------|-------|
+| Job Titles of Interest      | Multi-text | Affects job search keywords |
+| Locations of Interest       | Multi-text | Used to filter location |
+| Salary Expectation (min)    | Number     | Used in job filtering |
+| Excluded Companies          | Multi-text | Avoids applying to unwanted companies |
+| Willing to Relocate         | Boolean    | Yes / No toggle |
+| Preferred Work Arrangement  | Enum       | Full-time / Contract / Remote / Hybrid |
+| Active Security Clearance   | Boolean    | Yes / No |
+| Clearance Details           | Text       | Only shown if clearance is true |
+| Personal Website            | URL        | Optional |
+| LinkedIn Profile            | URL        | Optional |
+| GitHub Profile              | URL        | Optional |
+| Portfolio (File)            | File Upload| Optional |
+| Portfolio (Link)            | URL        | Optional |
+
+> ✅ Replace all instances of "emptyAdd information" with a styled button:
+> `➕ Add Info` or `✏️ Complete Section` to improve UX.
+
+---
+
+## 📬 2. Add Contact Information
+
+These fields are **required for auto-filling job applications** and should be collected with validation.
+
+### Contact Info Section
+
+| Field         | Type    | Required | Notes |
+|---------------|---------|----------|-------|
+| Full Name     | Text    | ✅        | Pulled from signup or editable |
+| Email Address | Email   | ✅        | Defaults to login email, but editable |
+| Phone Number  | Phone   | ✅        | Used in application forms |
+| Home Address  | Text    | ✅        | Street, city, state, ZIP |
+| Date of Birth | Date    | Optional | Some ATS systems request this |
+
+> 🔐 Secure these fields in storage with encryption and restrict exposure to job application workflows only.
+
+---
+
+## 🧑‍🎨 3. UI/UX Implementation Guidelines
+
+### Profile Tab or Page
+
+- Add a **"Profile"** tab under the user dropdown menu
+- Group fields into:
+  - Job Preferences
+  - Contact Information
+  - Online Presence
+- Support **inline editing** with Save buttons
+- Add **progress bar** showing profile completeness
+
+### UX Touches
+
+- ✅ Show confirmation toasts (e.g., `✔️ Preferences saved!`)
+- ❌ Show form-level error messages on validation failure
+
+---
+
+## 🧪 Developer Notes
+
+- All profile updates should:
+  - Trigger backend validation
+  - Be persisted to PostgreSQL
+  - Update the `users` or `profiles` table
+- Backend routes should protect and sanitize these updates
+
+---
+
+## ✅ Example Prompt for Replit AI:
+
+Add a Profile Settings page that allows users to edit all job preferences (titles, locations, salary, etc.), personal info (email, phone, address), and public links (LinkedIn, GitHub, portfolio). Save updates to the PostgreSQL database and add frontend validation + save confirmation. Use shadcn/ui for form inputs and group fields logically with sections and toggles. Add a profile completeness progress bar.
