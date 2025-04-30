@@ -41,6 +41,7 @@ import { registerPlaywrightTestRoutes } from "./routes/playwright-test-routes";
 import { registerEnvTestRoutes } from "./routes/env-test-routes";
 import { registerDirectFetchTestRoutes } from "./routes/direct-fetch-test-routes";
 import { registerWorkableDirectFetch } from "./routes/workable-direct-fetch";
+import { registerMigrationRoutes } from "./routes/migration-routes";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -90,6 +91,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Setup Workable direct fetch routes
   registerWorkableDirectFetch(app);
+  
+  // Setup database migration routes
+  registerMigrationRoutes(app);
 
   // Application answers API
   app.get("/api/application-answers", async (req, res) => {
@@ -687,7 +691,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     try {
-      const { userId, continueToken, pageSize = 10, maxInitialJobs = 15 } = req.body;
+      const { userId, continueToken, pageSize = 10, maxInitialJobs = 15, workplace, remote } = req.body;
       
       // Only allow users to search for their own jobs
       if (userId && userId !== req.user.id) {
@@ -729,20 +733,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "Loading more results..." : 
         "Searching for matching jobs...";
       
-      // Get jobs from Workable based on user profile with pagination support
+      // Get jobs from Workable based on user profile
       console.log(`Finding jobs for user ${userIdToUse}...`);
       
-      // Call the updated getWorkableJobsForUser with pagination options
-      const jobResult = await workableScraper.getWorkableJobsForUser(
-        userIdToUse, 
-        updateProgress,
+      // Extract useScrolling parameter from request body (default to undefined to use the global feature flag)
+      const { useScrolling } = req.body;
+      
+      // Import the integrated scraper that supports both pagination and infinite scrolling
+      const { getWorkableJobsForUser } = await import('./services/workable-scroll-integration');
+      
+      // Call the integrated getWorkableJobsForUser function which can use either implementation 
+      const jobListings = await getWorkableJobsForUser(
+        userIdToUse,
         {
-          continueToken,
-          pageSize: 20, // Use larger page size to get more results per request
-          maxInitialJobs: continueToken ? 100 : 50, // Significantly increased job limit
-          searchDepth: continueToken ? 10 : 5 // Much deeper search to prevent getting stuck
+          useScrollingScraper: useScrolling, // Use either the original pagination-based or new scroll-based implementation
+          maxJobs: continueToken ? 1000 : 1000, // Increased limit to get all available jobs (was 100/50)
+          maxSearchUrls: continueToken ? 20 : 10, // Increased search URLs as well (was 10/5)
+          preferredWorkplace: workplace as 'remote' | 'hybrid' | 'any' // Pass workplace preference
         }
       );
+      
+      // Create job result structure similar to original pagination-based scraper
+      const jobResult = {
+        jobs: jobListings,
+        hasMore: jobListings.length > 0, // Simplified hasMore logic
+        continueToken: jobListings.length > 0 ? 'next-page' : undefined
+      };
       
       const { jobs, hasMore, continueToken: newContinueToken } = jobResult;
       console.log(`Found ${jobs.length} jobs from Workable, hasMore: ${hasMore}`);

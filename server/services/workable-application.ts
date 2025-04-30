@@ -35,6 +35,11 @@ interface User extends BaseUser {
   phone?: string;
 }
 
+// Extended Resume interface to include content type
+interface ResumeWithContentType extends Resume {
+  contentType?: string;
+}
+
 // Extended UserProfile to handle additional properties
 interface UserProfile extends BaseUserProfile {
   jobTitle?: string;
@@ -70,7 +75,7 @@ interface UserProfile extends BaseUserProfile {
  */
 export async function submitWorkableApplication(
   user: User,
-  resume: Resume | undefined,
+  resume: ResumeWithContentType | undefined,
   profile: UserProfile | undefined,
   job: JobListing,
   matchScore: number
@@ -92,12 +97,33 @@ export async function submitWorkableApplication(
     
     // Phase 1: Introspection - Get the schema of the form
     console.log(`Phase 1: Introspecting form structure for: ${job.applyUrl}`);
-    const formSchema = await workableScraper.introspectJobForm(job.applyUrl);
+    const rawFormSchema = await workableScraper.introspectJobForm(job.applyUrl);
     
-    if (!formSchema || !formSchema.fields || !Array.isArray(formSchema.fields) || formSchema.fields.length === 0) {
+    // Handle the new nested structure from Patchright
+    let fields = null;
+    
+    // Case 1: New structure with nested formSchema
+    if (rawFormSchema?.formSchema?.fields && Array.isArray(rawFormSchema.formSchema.fields)) {
+      fields = rawFormSchema.formSchema.fields;
+      console.log(`Using new nested formSchema structure with ${fields.length} fields`);
+    } 
+    // Case 2: Legacy structure with direct fields array
+    else if (rawFormSchema?.fields && Array.isArray(rawFormSchema.fields)) {
+      fields = rawFormSchema.fields;
+      console.log(`Using legacy formSchema structure with ${fields.length} fields`);
+    }
+    
+    // Validate we have fields
+    if (!fields || fields.length === 0) {
       console.error("Form introspection failed or returned no fields");
       return "skipped";
     }
+    
+    // Create a standardized formSchema for the rest of the function
+    const formSchema = {
+      fields: fields,
+      status: "success"
+    };
     
     console.log(`Introspection successful: Found ${formSchema.fields.length} form fields`);
     
@@ -113,7 +139,8 @@ export async function submitWorkableApplication(
     
     // Helper to check if we'll be able to satisfy the required fields
     const canSatisfyRequiredFields = requiredFields.every((field: any) => {
-      const fieldNameLower = field.name.toLowerCase();
+      // Handle potential null values for field name and label
+      const fieldNameLower = (field.name || field.id || '').toLowerCase();
       const fieldLabelLower = (field.label || '').toLowerCase();
       
       // For file type fields, we need a resume
@@ -167,10 +194,11 @@ export async function submitWorkableApplication(
     
     // Now map our user data to the form fields
     for (const field of formSchema.fields) {
-      const fieldName = field.name;
-      const fieldType = field.type;
+      // Handle potential null values in field properties
+      const fieldName = field.name || field.id || `field_${Math.random().toString(36).substring(2, 10)}`;
+      const fieldType = field.type || 'text';
       const fieldLabel = field.label || '';
-      const fieldNameLower = fieldName.toLowerCase();
+      const fieldNameLower = (typeof fieldName === 'string' ? fieldName : '').toLowerCase();
       const fieldLabelLower = fieldLabel.toLowerCase();
       
       // Basic field mapping based on field name and label patterns
@@ -385,6 +413,28 @@ export async function submitWorkableApplication(
       }
     }
     
+    // Check if we need to add resume data for the Playwright worker
+    if (resume && resume.fileData) {
+      // CRITICAL: Worker requires both:
+      // 1. The resumeFilePath field (but not with base64:// prefix)
+      // 2. The raw resume data in the resume field
+      
+      // Add the resume content directly in the 'resume' field
+      formData.resume = resume.fileData;
+      
+      // The worker requires resumeFilePath but can't handle the base64:// prefix
+      // We'll use a special placeholder that the worker code understands
+      formData.resumeFilePath = "__BASE64_ENCODED__";
+      
+      // Set the content type and filename
+      // Default to PDF if content type is not available
+      formData.resumeContentType = 'application/pdf';
+      formData.resumeFilename = resume.filename || 'resume.pdf';
+      
+      // Add a flag to indicate we're sending a Base64-encoded file
+      formData.isResumeBase64 = true;
+    }
+    
     // Prepare the payload to submit to the Playwright worker's /submit endpoint
     const payload = {
       job: {
@@ -397,11 +447,45 @@ export async function submitWorkableApplication(
     console.log(`Sending form data to ${completeWorkerUrl}/submit with ${Object.keys(formData).length} fields mapped`);
     
     // Log form data for debugging (excluding resume data which is too large)
-    const formDataForLogging = { ...formData };
+    const formDataForLogging = JSON.parse(JSON.stringify(formData)); // Deep clone to avoid reference issues
+    
+    // Clean up any resume data from logs
     if (formDataForLogging.resume) {
       formDataForLogging.resume = "[RESUME DATA TRUNCATED]";
     }
-    console.log(`Form data for ${job.jobTitle} at ${job.company}:`, JSON.stringify(formDataForLogging, null, 2));
+    
+    // Also clean up the resumeFilePath if it contains Base64 data
+    if (formDataForLogging.resumeFilePath && typeof formDataForLogging.resumeFilePath === 'string' && 
+        formDataForLogging.resumeFilePath.startsWith('base64://')) {
+      formDataForLogging.resumeFilePath = "[BASE64 RESUME DATA TRUNCATED]";
+    }
+    
+    // Clean any other fields that might contain the resume data
+    Object.keys(formDataForLogging).forEach(key => {
+      if (typeof formDataForLogging[key] === 'string') {
+        // Check for Base64 encoded PDFs (JVBERi0 is PDF header in Base64)
+        if (formDataForLogging[key].length > 1000 && formDataForLogging[key].includes('JVBERi0')) {
+          formDataForLogging[key] = `[LARGE BASE64 PDF DATA (${formDataForLogging[key].length} chars) TRUNCATED]`;
+        }
+        // Check for any very large string that might be a file
+        else if (formDataForLogging[key].length > 1000) {
+          formDataForLogging[key] = `[LARGE STRING DATA (${formDataForLogging[key].length} chars) TRUNCATED]`;
+        }
+      } else if (formDataForLogging[key] && typeof formDataForLogging[key] === 'object') {
+        // Check nested objects too
+        Object.keys(formDataForLogging[key]).forEach(nestedKey => {
+          if (typeof formDataForLogging[key][nestedKey] === 'string' && 
+              formDataForLogging[key][nestedKey].length > 1000) {
+            formDataForLogging[key][nestedKey] = `[LARGE NESTED DATA (${formDataForLogging[key][nestedKey].length} chars) TRUNCATED]`;
+          }
+        });
+      }
+    });
+    
+    // Log only a reasonable amount of the form data
+    console.log(`Form data for ${job.jobTitle} at ${job.company} (truncated):`);
+    const formDataString = JSON.stringify(formDataForLogging, null, 2);
+    console.log(formDataString.length > 2000 ? formDataString.substring(0, 2000) + '... [truncated]' : formDataString);
     
     const response = await fetch(`${completeWorkerUrl}/submit`, {
       method: "POST",

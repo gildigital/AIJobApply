@@ -18,6 +18,7 @@ const PostgresSessionStore = connectPgSimple(session);
 export interface IStorage {
   // User Methods
   getUser(id: number): Promise<User | undefined>;
+  getAllUsers(): Promise<User[]>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined>;
@@ -82,6 +83,10 @@ export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
+  }
+  
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
@@ -301,16 +306,23 @@ export class DatabaseStorage implements IStorage {
         eq(jobQueue.userId, userId),
         or(
           eq(jobQueue.status, 'pending'),
-          eq(jobQueue.status, 'processing')
+          eq(jobQueue.status, 'processing'),
+          eq(jobQueue.status, 'standby')
         )
       ))
       .orderBy(desc(jobQueue.priority), asc(jobQueue.createdAt));
   }
 
   async updateQueuedJob(id: number, data: Partial<JobQueue>): Promise<JobQueue | undefined> {
+    // Add updatedAt timestamp if not provided
+    const updateData = {
+      ...data,
+      updatedAt: data.updatedAt || new Date() // Use provided timestamp or current time
+    };
+    
     const [updatedJob] = await db
       .update(jobQueue)
-      .set(data)
+      .set(updateData)
       .where(eq(jobQueue.id, id))
       .returning();
     return updatedJob || undefined;

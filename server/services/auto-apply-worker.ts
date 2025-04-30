@@ -7,7 +7,9 @@
 
 import { storage } from "../storage";
 import { submitApplication, addJobToTracker, createAutoApplyLog, JobListing, scoreJobFit } from "./auto-apply-service";
-import { JobQueue, JobTracker, User } from "@shared/schema";
+import { JobQueue, JobTracker, User, jobQueue } from "@shared/schema";
+import { db } from "../db";
+import { eq } from "drizzle-orm";
 
 // Configuration for worker delays
 const WORKER_INTERVAL_MS = 10000; // Run worker every 10 seconds
@@ -80,6 +82,9 @@ export function stopAutoApplyWorker(): void {
  */
 async function processQueuedJobs(): Promise<void> {
   try {
+    // Check if we need to reactivate any standby jobs (it's a new day)
+    await checkAndReactivateStandbyJobs();
+    
     // Get next batch of pending jobs
     const pendingJobs = await storage.getNextJobsFromQueue(DEFAULT_BATCH_SIZE);
     
@@ -96,6 +101,91 @@ async function processQueuedJobs(): Promise<void> {
     }
   } catch (error) {
     console.error("[Auto-Apply Worker] Error processing queued jobs:", error);
+  }
+}
+
+/**
+ * Check if any jobs in standby mode need to be reactivated (daily reset)
+ */
+async function checkAndReactivateStandbyJobs(): Promise<void> {
+  try {
+    // Using raw SQL through db.execute to get around type issues temporarily
+    // We'll be using direct database access for this specific operation
+    // since our storage interface might not have methods for the new status yet
+    
+    // For now, we'll use a simpler approach that uses the existing storage interface
+    // Get all queued jobs for all users (not optimal but will work until we add a new method)
+    // Then filter in memory to find standby jobs
+    
+    // First, get all users
+    const users = await storage.getAllUsers();
+    
+    if (!users || users.length === 0) {
+      return; // No users to check
+    }
+    
+    let totalStandbyJobs = 0;
+    const jobsByUser: Record<number, JobQueue[]> = {};
+    
+    // For each user, get their queued jobs and filter for standby
+    for (const user of users) {
+      const userQueuedJobs = await storage.getQueuedJobsForUser(user.id);
+      const standbyJobs = userQueuedJobs.filter(job => job.status === "standby");
+      
+      if (standbyJobs.length > 0) {
+        jobsByUser[user.id] = standbyJobs;
+        totalStandbyJobs += standbyJobs.length;
+      }
+    }
+    
+    if (totalStandbyJobs === 0) {
+      return; // No standby jobs to check
+    }
+    
+    console.log(`[Auto-Apply Worker] Checking ${totalStandbyJobs} standby jobs for reactivation`);
+    
+    // Check each user's daily application limit
+    for (const [userIdStr, jobs] of Object.entries(jobsByUser)) {
+      const userId = parseInt(userIdStr, 10);
+      
+      // Check if user has available application slots today
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const appliedToday = await storage.getJobsAppliedToday(userId, today);
+      
+      // Get user's plan details
+      const user = await storage.getUser(userId);
+      if (!user) continue;
+      
+      const userPlan = user.subscriptionPlan || "FREE";
+      const userDailyLimit = DAILY_LIMITS[userPlan as keyof typeof DAILY_LIMITS] || DAILY_LIMITS.FREE;
+      
+      // If user has applications available, reactivate their standby jobs
+      if (appliedToday < userDailyLimit) {
+        const availableSlots = userDailyLimit - appliedToday;
+        const jobsToReactivate = jobs.slice(0, availableSlots);
+        
+        console.log(`[Auto-Apply Worker] Reactivating ${jobsToReactivate.length} standby jobs for user ${userId} (${availableSlots} slots available)`);
+        
+        // Reactivate jobs
+        for (const job of jobsToReactivate) {
+          await storage.updateQueuedJob(job.id, { 
+            status: "pending",
+            error: null,
+            updatedAt: new Date()
+          });
+          
+          await createAutoApplyLog({
+            userId,
+            jobId: job.jobId,
+            status: "Reactivated",
+            message: "Job reactivated after daily application limit reset"
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[Auto-Apply Worker] Error reactivating standby jobs:", error);
   }
 }
 
@@ -130,16 +220,17 @@ async function processJob(queuedJob: JobQueue): Promise<void> {
     const userDailyLimit = DAILY_LIMITS[userPlan as keyof typeof DAILY_LIMITS] || DAILY_LIMITS.FREE;
 
     if (appliedToday >= userDailyLimit) {
+      // Instead of marking as failed, put in standby mode
       await storage.updateQueuedJob(queuedJob.id, { 
-        status: "failed", 
-        error: "Daily application limit reached" 
+        status: "standby", // New status for jobs waiting for limit reset
+        error: "Daily application limit reached, will resume after midnight" 
       });
       
       await createAutoApplyLog({
         userId: user.id,
         jobId: job.id,
-        status: "Failed",
-        message: `Daily limit of ${userDailyLimit} applications reached`
+        status: "Standby",
+        message: `Job queued in standby mode. Daily limit of ${userDailyLimit} applications reached. Will resume after midnight reset.`
       });
       
       return;
@@ -294,14 +385,7 @@ function getPriorityForPlan(plan: string): number {
  * @param userId User ID to get status for
  * @returns Object with status information
  */
-export async function getAutoApplyStatus(userId: number): Promise<{
-  queuedJobs: number;
-  completedJobs: number;
-  failedJobs: number;
-  dailyLimit: number;
-  appliedToday: number;
-  isWorkerRunning: boolean;
-}> {
+export async function getAutoApplyStatus(userId: number): Promise<any> {
   try {
     // Get all queued jobs for the user
     const queuedJobs = await storage.getQueuedJobsForUser(userId);
@@ -309,6 +393,7 @@ export async function getAutoApplyStatus(userId: number): Promise<{
     // Count jobs by status
     const pending = queuedJobs.filter(job => job.status === "pending").length;
     const processing = queuedJobs.filter(job => job.status === "processing").length;
+    const standby = queuedJobs.filter(job => job.status === "standby").length;
     
     // Get completed and failed jobs from today
     const today = new Date();
@@ -320,13 +405,44 @@ export async function getAutoApplyStatus(userId: number): Promise<{
     const userPlan = user?.subscriptionPlan || "FREE";
     const dailyLimit = DAILY_LIMITS[userPlan as keyof typeof DAILY_LIMITS] || DAILY_LIMITS.FREE;
     
+    // Calculate remaining applications (can be negative if over limit)
+    const remainingApplications = dailyLimit - appliedToday;
+    
+    // Calculate when the daily counter resets (midnight tonight)
+    const resetTime = new Date();
+    resetTime.setHours(24, 0, 0, 0); // Set to midnight tonight
+    
+    // Determine if we're in standby mode (daily limit reached AND have standby jobs)
+    const isInStandbyMode = remainingApplications <= 0 && standby > 0;
+    
+    // Determine current status
+    let currentStatus = "Completed";
+    if (pending > 0 || processing > 0) {
+      currentStatus = "In Progress";
+    } else if (standby > 0 && remainingApplications <= 0) {
+      currentStatus = "Standby";
+    }
+    
+    // Create message for standby mode
+    let latestMessage = "";
+    if (isInStandbyMode) {
+      const resetTimeFormatted = new Date(resetTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      latestMessage = `${standby} job${standby !== 1 ? 's' : ''} in standby mode. Daily limit reached. Applications will resume at ${resetTimeFormatted}.`;
+    }
+    
     return {
+      currentStatus,
+      isAutoApplyEnabled: isWorkerRunning,  // Worker state variable from the module
+      isInStandbyMode,
       queuedJobs: pending + processing,
+      standbyJobs: standby,
       completedJobs: appliedToday,
       failedJobs: queuedJobs.filter(job => job.status === "failed").length,
-      dailyLimit,
+      latestMessage,
       appliedToday,
-      isWorkerRunning
+      dailyLimit,
+      remainingToday: remainingApplications,
+      nextReset: resetTime.toISOString()
     };
   } catch (error) {
     console.error(`[Auto-Apply Worker] Error getting status for user ${userId}:`, error);

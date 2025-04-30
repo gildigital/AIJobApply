@@ -4,9 +4,11 @@ import { eq, and, gte, sql, or } from "drizzle-orm";
 import { storage } from "../storage";
 
 /**
- * Import the Workable job functions
+ * Import the Workable job functions - use the integrated version that supports both
+ * pagination and infinite scrolling implementations
  */
-import { getWorkableJobsForUser, workableScraper } from "./workable-scraper";
+import { workableScraper } from "./workable-scraper";
+import { getWorkableJobsForUser } from "./workable-scroll-integration";
 
 /**
  * Represents a job listing from an external source
@@ -662,6 +664,32 @@ async function submitApplicationToPlaywright(
     
     // Make the API request to the Playwright worker
     console.log(`POST ${completeWorkerUrl}/submit`);
+    
+    // Create a sanitized payload for logging
+    const payloadForLogging = { ...payload };
+    
+    // Clean up resume data from logs
+    if (payloadForLogging.resume && payloadForLogging.resume.fileContent) {
+      payloadForLogging.resume = {
+        ...payloadForLogging.resume,
+        fileContent: `[BASE64 RESUME DATA (${payloadForLogging.resume.fileContent.length} chars) TRUNCATED]`
+      };
+    }
+    
+    // Clean up resume text from user object if it's large
+    if (payloadForLogging.user && payloadForLogging.user.resumeText && 
+        payloadForLogging.user.resumeText.length > 500) {
+      payloadForLogging.user = {
+        ...payloadForLogging.user,
+        resumeText: `[RESUME TEXT TRUNCATED (${payloadForLogging.user.resumeText.length} chars)]`
+      };
+    }
+    
+    // Log sanitized payload for debugging
+    console.log(`Payload prepared for ${job.company} - ${job.jobTitle}:`, 
+                JSON.stringify(payloadForLogging, null, 2).substring(0, 1000) + 
+                (JSON.stringify(payloadForLogging, null, 2).length > 1000 ? "... [truncated]" : ""));
+    
     const response = await fetch(`${completeWorkerUrl}/submit`, {
       method: "POST",
       headers: {

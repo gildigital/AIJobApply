@@ -35,20 +35,33 @@ export function registerWorkableSchemaRoutes(app: Express) {
       console.log(`Processing Workable job-listing URL: ${jobUrl}`);
       
       // Perform introspection on the job's application form
-      const formSchema = await workableScraper.introspectJobForm(jobUrl);
+      const result = await workableScraper.introspectJobForm(jobUrl);
       
-      if (!formSchema) {
+      // If no result returned at all (e.g., network failure, etc.)
+      if (!result) {
         return res.status(404).json({
           success: false,
-          error: "Failed to introspect job form",
-          message: "The worker was unable to analyze the form structure"
+          error: {
+            message: "Failed to introspect job form",
+            status: "Error",
+            details: "The worker was unable to analyze the form structure"
+          }
         });
       }
       
+      // Check if the result is already an error response
+      if (result.success === false) {
+        // We have an explicit error response from the service
+        // Pass it through directly
+        return res.status(404).json(result);
+      }
+      
+      // This is a success response in either format
       return res.json({
         success: true,
+        status: "success",
         message: "Job form introspection successful",
-        formSchema
+        formSchema: result.formSchema || { status: "success", fields: result.fields }
       });
     } catch (error) {
       console.error("Error in Workable introspect test route:", error);
@@ -84,13 +97,34 @@ export function registerWorkableSchemaRoutes(app: Express) {
       console.log(`Processing Workable job application for URL: ${jobUrl}`);
       
       // Create a test user with minimal data needed for application
+      // Include all required properties for the User type
       const testUser = {
         id: 999,
-        name: "Gilileo",
-        firstName: "Gilileo",
-        lastName: "Test",
+        username: "gilileo_test",
+        password: "hashed_password_not_used_for_test",
         email: "gilileo.af@gmail.com",
-        phone: "555-123-4567"
+        name: "Gilileo Test",
+        firstName: "Gilileo", // Extended property
+        lastName: "Test",     // Extended property
+        phone: "555-123-4567", // Extended property
+        location: "Remote",
+        onboardingCompleted: true,
+        isAdmin: false,
+        dailyApplicationLimit: 5,
+        stripeCustomerId: null,
+        stripeSessionId: null,
+        stripeSubscriptionId: null,
+        isAutoApplyEnabled: false,
+        subscriptionPlan: "FREE",
+        subscriptionRenewsAt: null,
+        subscriptionStartDate: null,
+        subscriptionEndDate: null,
+        resumeText: "Software Engineer with experience in web development technologies.",
+        userSummary: "Experienced software engineer looking for new opportunities.",
+        aiTokensUsed: 0,
+        remainingTokens: 1000,
+        createdAt: new Date(),
+        updatedAt: new Date()
       };
       
       // Create a simple test job listing
@@ -132,10 +166,21 @@ export function registerWorkableSchemaRoutes(app: Express) {
         }
       };
       
+      // Create a simple test resume (this is Base64 string of a tiny PDF)
+      const testResume = {
+        id: 999,
+        userId: 999,
+        filename: "test_resume.pdf",
+        fileData: "JVBERi0xLjUKJbXtrvsKNSAwIG9iago8PCAvTGVuZ3RoIDYgMCBSCiAgIC9GaWx0ZXIgL0ZsYXRlRGVjb2RlCj4+CnN0cmVhbQp4nDPQM1QwNDJUKErlMtAzAEKFXK60osy81GIuADd5BWsKZW5kc3RyZWFtCmVuZG9iago2IDAgb2JqCiAgIDM2CmVuZG9iago0IDAgb2JqCjw8Cj4+CmVuZG9iagozIDAgb2JqCjw8CiAgIC9UeXBlIC9QYWdlCiAgIC9QYXJlbnQgMSAwIFIKICAgL01lZGlhQm94IFswIDAgMTAwIDEwMF0KICAgL0NvbnRlbnRzIDUgMCBSCiAgIC9Hcm91cCA8PCAvVHlwZSAvR3JvdXAKICAgICAgICAgICAgICAvUyAvVHJhbnNwYXJlbmN5CiAgICAgICAgICAgICAgL0kgdHJ1ZQogICAgICAgICAgICAgIC9DUyAvRGV2aWNlUkdCCiAgICAgICAgICA+Pgo+PgplbmRvYmoKMSAwIG9iago8PCAvVHlwZSAvUGFnZXMKICAgL0tpZHMgWyAzIDAgUiBdCiAgIC9Db3VudCAxCj4+CmVuZG9iagoyIDAgb2JqCjw8IC9UeXBlIC9DYXRhbG9nCiAgIC9QYWdlcyAxIDAgUgo+PgplbmRvYmoKeHJlZgowIDcKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwNDcxIDAwMDAwIG4gCjAwMDAwMDA1MzAgMDAwMDAgbiAKMDAwMDAwMDIwMyAwMDAwMCBuIAowMDAwMDAwMTgyIDAwMDAwIG4gCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDEyOSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDcKICAgL1Jvb3QgMiAwIFIKICAgL0lEIFsgPGExMGQ0MGU4NmZkNTBkNDJlMmRlYzRlMGYwZmNlYTY3PiA8YTEwZDQwZTg2ZmQ1MGQ0MmUyZGVjNGUwZjBmY2VhNjc+IF0KICAgL0luZm8gNCAwIFIKPj4Kc3RhcnR4cmVmCjU3OQolJUVPRgo=",
+        fileType: "application/pdf",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    
       // Use the schema-driven approach to submit the application
       const result = await submitWorkableApplication(
         testUser,
-        null, // no resume for the test
+        testResume, // add a test resume
         testProfile,
         testJob,
         85 // test match score

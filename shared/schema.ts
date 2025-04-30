@@ -209,11 +209,12 @@ export const jobQueue = pgTable("job_queue", {
   userId: integer("user_id").notNull().references(() => users.id),
   jobId: integer("job_id").notNull().references(() => jobTracker.id),
   priority: integer("priority").default(0).notNull(),
-  status: text("status", { enum: ["pending", "processing", "completed", "failed", "skipped"] }).default("pending").notNull(),
+  status: text("status", { enum: ["pending", "processing", "completed", "failed", "skipped", "standby"] }).default("pending").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   processedAt: timestamp("processed_at"),
   error: text("error"),
   attemptCount: integer("attempt_count").default(0).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const insertJobQueueSchema = createInsertSchema(jobQueue).omit({
@@ -244,12 +245,17 @@ export const userProfiles = pgTable("user_profiles", {
   
   // Job Preferences
   jobTitlesOfInterest: text("job_titles_of_interest").array(),
-  locationsOfInterest: text("locations_of_interest").array(),
+  locationsOfInterest: text("locations_of_interest").array(), // City, State, Country for geographical preferences
   minSalaryExpectation: integer("min_salary_expectation"),
   excludedCompanies: text("excluded_companies").array(),
   willingToRelocate: boolean("willing_to_relocate"),
   matchScoreThreshold: integer("match_score_threshold").default(70),
-  preferredWorkArrangement: text("preferred_work_arrangement"), // 'full-time', 'contract', 'remote', 'hybrid'
+  // Employment type (full-time, part-time, contract, temporary, internship)
+  preferredWorkArrangement: text("preferred_work_arrangement").array(),
+  // Workplace type (remote, hybrid, on-site)
+  workplaceOfInterest: text("workplace_of_interest").array(),
+  // Experience level (entry_level, associate, mid_senior_level, director, executive)
+  jobExperienceLevel: text("job_experience_level").array(),
   activeSecurityClearance: boolean("active_security_clearance"),
   clearanceDetails: text("clearance_details"),
   
@@ -306,12 +312,19 @@ export const contactInfoSchema = z.object({
 });
 
 export const jobPreferencesSchema = z.object({
+  // Required field - we do need at least one job title to search for
   jobTitlesOfInterest: z.array(z.string()).min(1, "At least one job title is required"),
-  locationsOfInterest: z.array(z.string()).min(1, "At least one location is required"),
+  // All other fields are optional for broader searches
+  locationsOfInterest: z.array(z.string()).optional().default([]),
   minSalaryExpectation: z.number().optional(),
-  excludedCompanies: z.array(z.string()).optional(),
+  excludedCompanies: z.array(z.string()).optional().default([]),
   willingToRelocate: z.boolean(),
-  preferredWorkArrangement: z.enum(["full-time", "contract", "remote", "hybrid"]),
+  // Updated to array of employment types - optional
+  preferredWorkArrangement: z.array(z.enum(["full-time", "part-time", "contract", "temporary", "internship"])).optional().default([]),
+  // New field for workplace preferences (remote, hybrid, on-site) - optional
+  workplaceOfInterest: z.array(z.enum(["remote", "hybrid", "on-site"])).optional().default([]),
+  // New field for experience level - optional
+  jobExperienceLevel: z.array(z.enum(["entry_level", "associate", "mid_senior_level", "director", "executive"])).optional().default([]),
   activeSecurityClearance: z.boolean(),
   clearanceDetails: z.string().optional(),
   matchScoreThreshold: z.number().min(0).max(100).default(70),

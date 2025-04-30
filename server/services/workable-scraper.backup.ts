@@ -439,40 +439,11 @@ export class WorkableScraper {
         combinedParams.location = profile.locationsOfInterest[0];
       }
 
-      // Update workplace logic using the new array-based preferences 
-      // First check for array-based workplace preferences
-      if (Array.isArray(profile.workplaceOfInterest) && profile.workplaceOfInterest.length > 0) {
-        // Check if remote is in the workplace preferences
-        if (profile.workplaceOfInterest.includes('remote')) {
-          combinedParams.workplace = "remote";
-        }
-        // If not remote but hybrid is in preferences
-        else if (profile.workplaceOfInterest.includes('hybrid')) {
-          combinedParams.workplace = "hybrid";
-        }
-        // If on-site only, use 'any' to not exclude potential matches
-        else if (profile.workplaceOfInterest.includes('on-site')) {
-          combinedParams.workplace = "any";
-        }
-      }
-      // Fallback to legacy string-based preference for backward compatibility
-      else if (Array.isArray(profile.preferredWorkArrangement) && profile.preferredWorkArrangement.length > 0) {
-        // For array-based preferredWorkArrangement
-        if (profile.preferredWorkArrangement.includes("remote")) {
-          combinedParams.workplace = "remote";
-        } else if (profile.preferredWorkArrangement.includes("hybrid")) {
-          combinedParams.workplace = "hybrid";
-        } else {
-          combinedParams.workplace = "any";
-        }
-      }
-      // Legacy string-based support (handle string as a single string, not array)
-      else if (typeof profile.preferredWorkArrangement === 'string') {
-        if (profile.preferredWorkArrangement === "remote") {
-          combinedParams.workplace = "remote";
-        } else if (profile.preferredWorkArrangement === "hybrid") {
-          combinedParams.workplace = "hybrid";
-        }
+      // Update workplace logic: prefer user's remote preference
+      if (profile.preferredWorkArrangement === "remote") {
+        combinedParams.workplace = "remote";
+      } else if (profile.preferredWorkArrangement === "hybrid") {
+        combinedParams.workplace = "hybrid";
       }
       // Only use 'any' if neither remote nor hybrid is set
       else if (!combinedParams.workplace) {
@@ -597,41 +568,14 @@ export class WorkableScraper {
       console.log(
         `Adding initial search for job title "${jobTitle}" on page 1`,
       );
-      
-      // Build the base URL with job title and workplace preferences
-      const baseUrl = this.buildSearchUrl(profile, {
-        query: jobTitle, // This will be used to build the 'query' parameter
-        page: 1,
-        workplace: params.workplace, // Include workplace preferences from params
-        remote: params.remote, // Include remote flag from params
-      });
-      
-      searchUrls.push(baseUrl);
-      
-      // Check if user has specified job experience levels
-      if (Array.isArray(profile.jobExperienceLevel) && profile.jobExperienceLevel.length > 0) {
-        console.log(`User has specified job experience levels: ${profile.jobExperienceLevel.join(', ')}`);
-        
-        // Create experience-specific search URLs for each experience level
-        const workableExperienceLevels: Record<string, string> = {
-          'entry': 'entry_level',
-          'mid': 'mid_level',
-          'senior': 'senior_level',
-          'director': 'director',
-          'executive': 'executive'
-        };
-        
-        // For each experience level the user is interested in, create a URL with that filter
-        profile.jobExperienceLevel.forEach(level => {
-          const workableLevel = workableExperienceLevels[level];
-          if (workableLevel) {
-            const url = new URL(baseUrl);
-            url.searchParams.set('experience', workableLevel);
-            console.log(`Adding experience-filtered search: ${url.toString()}`);
-            searchUrls.push(url.toString());
-          }
-        });
-      }
+      searchUrls.push(
+        this.buildSearchUrl(profile, {
+          query: jobTitle, // This will be used to build the 'query' parameter
+          page: 1,
+          workplace: params.workplace, // Include workplace preferences from params
+          remote: params.remote, // Include remote flag from params
+        }),
+      );
     }
 
     return searchUrls;
@@ -881,36 +825,13 @@ export class WorkableScraper {
       // Parse and return the introspection data
       const result = await response.json();
 
-      // Handle the new response format
-      // Case 1: Success with nested formSchema
       if (
-        result.status === "success" &&
-        result.formSchema &&
-        result.formSchema.status === "success" &&
-        result.formSchema.fields &&
-        Array.isArray(result.formSchema.fields)
-      ) {
-        const fields = result.formSchema.fields;
-        console.log(
-          `Successfully introspected form with ${fields.length} fields`,
-        );
-
-        // Log this successful URL for comparison
-        this.logSuccessfulUrl(jobUrl, fields.length, {
-          fieldTypes: fields.map((f: any) => f.type),
-          requiredFields: fields.filter((f: any) => f.required).length,
-        });
-
-        return result;
-      } 
-      // Case 2: Legacy success format (direct fields array)
-      else if (
         result.status === "success" &&
         result.fields &&
         Array.isArray(result.fields)
       ) {
         console.log(
-          `Successfully introspected form with ${result.fields.length} fields (legacy format)`,
+          `Successfully introspected form with ${result.fields.length} fields`,
         );
 
         // Log this successful URL for comparison
@@ -920,25 +841,8 @@ export class WorkableScraper {
         });
 
         return result;
-      }
-      // Case 3: Error response with success: false
-      else if (result.success === false && result.error) {
-        console.error("Introspection failed:", 
-          result.error.message || result.error || "Unknown error");
-
-        // Log this problematic URL for analysis
-        this.logProblemUrl(jobUrl, "introspection_failed", {
-          error: result.error.message || result.error || "Unknown error",
-          status: result.error.status || "Error Response",
-          details: result.error.details || null
-        });
-
-        // Pass through the error response for the frontend to handle
-        return result;
-      } 
-      // Case 4: Unrecognized response format
-      else {
-        console.error("Introspection failed: Invalid response structure", result);
+      } else {
+        console.error("Introspection failed:", result.error || "Unknown error");
 
         // Log this problematic URL for analysis
         this.logProblemUrl(jobUrl, "introspection_failed", {
@@ -1205,8 +1109,8 @@ export class WorkableScraper {
         state[`last_page_${query}`] = currentPage;
       }
 
-      // Process more jobs at once to avoid missing potential matches
-      const MAX_JOBS_PER_PAGE = 200; // Increased from 20 to 200 to match our other limits
+      // Limit the number of jobs to fetch at once to reduce load
+      const MAX_JOBS_PER_PAGE = 20;
       const jobsToProcess = newLinks.slice(0, MAX_JOBS_PER_PAGE);
 
       // Handle case of no new jobs on this page
@@ -1669,17 +1573,9 @@ export class WorkableScraper {
     location: string;
   }): number {
     try {
-      // Calculate match score based on the four key components:
-      // 1. Direct keyword match: 30% of score
-      // 2. Role alignment: 30% of score
-      // 3. Experience level match: 25% of score
-      // 4. Education alignment: 15% of score
-
-      // Match weights
-      const KEYWORD_MATCH_WEIGHT = 0.3;      // 30%
-      const ROLE_ALIGNMENT_WEIGHT = 0.3;     // 30%
-      const EXPERIENCE_MATCH_WEIGHT = 0.25;  // 25% 
-      const EDUCATION_MATCH_WEIGHT = 0.15;   // 15%
+      // Get user profile to match against (if available)
+      // This is a more realistic implementation that calculates a match score
+      // based on the job info and the user's profile/resume
 
       // Keywords to look for in job descriptions
       const skillKeywords = [
@@ -1707,75 +1603,34 @@ export class WorkableScraper {
         "postgresql",
       ];
 
-      // Get user profile info
-      // Start with a base score in each category 
-      let keywordMatchScore = 65;
-      let roleAlignmentScore = 65;
-      let experienceLevelScore = 65;
-      let educationScore = 65;
-      
-      // Look for role alignment in the job title
+      // Start with a base score
+      let score = 65; // Base score
+
+      // Check job title for relevant keywords
       const lowercaseTitle = jobInfo.title.toLowerCase();
       const titleMatches = skillKeywords.filter((keyword) =>
         lowercaseTitle.includes(keyword),
       );
-      
-      // Improved role alignment score
-      roleAlignmentScore += titleMatches.length * 5;
-      
-      // Check description for keyword matches
+
+      // Add points for title matches (more weight on title)
+      score += titleMatches.length * 3;
+
+      // Check description for skill keywords
       const lowercaseDesc = jobInfo.description.toLowerCase();
       const descMatches = skillKeywords.filter((keyword) =>
         lowercaseDesc.includes(keyword),
       );
-      
-      // Improved keyword match score 
-      keywordMatchScore += descMatches.length * 3;
-      
-      // Check for experience level indicators in the title and description
-      const experienceLevelMap = {
-        entry_level: ["entry level", "junior", "associate", "graduate", "grad", "trainee", "apprentice", "internship", "co-op", "college"],
-        mid_senior_level: ["mid level", "senior", "sr.", "lead", "principal", "staff", "experienced", "mid-level"],
-        director: ["director", "head of", "manager", "manage", "management"],
-        executive: ["executive", "chief", "vp", "vice president", "cto", "cio", "ceo", "founder"]
-      };
-      
-      // Look for experience level terms in title and description
-      let experienceLevelMatches = 0;
-      Object.entries(experienceLevelMap).forEach(([level, terms]) => {
-        if (terms.some(term => lowercaseTitle.includes(term) || lowercaseDesc.includes(term))) {
-          experienceLevelMatches += 1;
-        }
-      });
-      
-      // Score for experience level
-      experienceLevelScore += experienceLevelMatches * 10;
-      
-      // Check for education requirements
-      const educationTerms = ["bachelor", "master", "phd", "degree", "bs", "ms", "ba", "education", "university"];
-      const educationMatches = educationTerms.filter(term => lowercaseDesc.includes(term));
-      educationScore += educationMatches.length * 5;
-      
-      // Additional points for remote positions when needed
+
+      // Add points for description matches
+      score += descMatches.length * 2;
+
+      // Extra points for remote positions if that's what user wants
       if (jobInfo.location.toLowerCase().includes("remote")) {
-        roleAlignmentScore += 5;
+        score += 5;
       }
-      
-      // Cap individual scores at 100
-      keywordMatchScore = Math.min(100, keywordMatchScore);
-      roleAlignmentScore = Math.min(100, roleAlignmentScore);
-      experienceLevelScore = Math.min(100, experienceLevelScore);
-      educationScore = Math.min(100, educationScore);
-      
-      // Calculate weighted total score
-      const totalScore = 
-        keywordMatchScore * KEYWORD_MATCH_WEIGHT + 
-        roleAlignmentScore * ROLE_ALIGNMENT_WEIGHT + 
-        experienceLevelScore * EXPERIENCE_MATCH_WEIGHT + 
-        educationScore * EDUCATION_MATCH_WEIGHT;
-      
-      // Cap final score at 98 (leave room for AI-powered exact matching)
-      return Math.min(98, Math.round(totalScore));
+
+      // Cap score at 98 (leave room for AI-powered exact matching)
+      return Math.min(98, Math.round(score));
     } catch (error) {
       console.error("Error calculating match score:", error);
       // Return a default score if calculation fails

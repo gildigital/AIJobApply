@@ -1,0 +1,413 @@
+  async scrapeJobsFromSearchUrl(
+    searchUrl: string, 
+    state?: SearchState,
+    jobDetailTimeoutMs: number = 10000 // Increased timeout
+  ): Promise<JobListing[]> {
+    try {
+      // Parse the URL for analysis and extraction of components
+      const urlObj = new URL(searchUrl);
+      const query = urlObj.searchParams.get('query') || '';
+      const currentPage = parseInt(urlObj.searchParams.get('page') || '1');
+      
+      console.log(`Fetching job listings from: ${searchUrl}`);
+      
+      // Use the rate limiter for ALL network requests to avoid 429 errors
+      const response = await this.limiter.schedule(() => fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Referer': 'https://jobs.workable.com/'
+        }
+      }));
+      
+      if (!response.ok) {
+        // IMPROVED RATE LIMIT HANDLING: Use exponential backoff and priority queue
+        if (response.status === 429) {
+          const retryAfter = parseInt(response.headers.get('retry-after') || '10', 10);
+          console.warn(`Rate limited (429) when fetching ${searchUrl}. Retry after ${retryAfter}s`);
+          
+          // Log for analysis
+          this.logProblemUrl(searchUrl, "rate_limited_429", {
+            timestamp: new Date().toISOString(),
+            retryAfter
+          });
+          
+          // Add URL back to queue with lower priority and rate limit tracking
+          if (state) {
+            // Track rate limit attempts for this URL
+            const rateLimitKey = `rate_limit_${query}_page${currentPage}`;
+            const attempts = (state[rateLimitKey] || 0) + 1;
+            state[rateLimitKey] = attempts;
+            
+            // Calculate exponential backoff priority - the more attempts, the lower the priority
+            const backoffPriority = Math.max(0.05, 0.5 / Math.pow(2, attempts));
+            
+            // Queue for retry with exponential backoff priority
+            console.log(`Re-queueing rate-limited URL with priority ${backoffPriority.toFixed(3)} (attempt ${attempts})`);
+            state.searchUrls.push({
+              url: searchUrl,
+              priority: backoffPriority
+            });
+            
+            // Don't consider this processed - we need to retry
+            state.processedUrls = state.processedUrls.filter(url => url !== searchUrl);
+          }
+          return [];
+        }
+        
+        console.error(`Failed to fetch: ${response.statusText}, Status: ${response.status}`);
+        
+        // Apply similar exponential backoff approach for other error types
+        if (state) {
+          // Track general error attempts for this URL
+          const errorKey = `error_${query}_page${currentPage}`;
+          const attempts = (state[errorKey] || 0) + 1;
+          state[errorKey] = attempts;
+          
+          // Only retry up to 3 times with decreasing priority
+          if (attempts <= 3) {
+            // Calculate exponential backoff priority - more aggressive than rate limit backoff
+            const backoffPriority = Math.max(0.02, 0.3 / Math.pow(2, attempts));
+            
+            // Queue for retry with exponential backoff priority
+            console.log(`Re-queueing failed URL (HTTP ${response.status}) with priority ${backoffPriority.toFixed(3)} (attempt ${attempts})`);
+            state.searchUrls.push({
+              url: searchUrl,
+              priority: backoffPriority
+            });
+            
+            // Don't consider this processed yet - we need to retry
+            state.processedUrls = state.processedUrls.filter(url => url !== searchUrl);
+            
+            // Log the problem for analysis
+            this.logProblemUrl(searchUrl, `http_error_${response.status}`, {
+              errorCode: response.status,
+              errorText: response.statusText,
+              attempt: attempts
+            });
+          } else {
+            console.log(`Giving up on URL after ${attempts} failed attempts: ${searchUrl}`);
+            // Mark as processed to avoid further retries
+            state.processedUrls.push(searchUrl);
+          }
+        }
+        
+        return [];
+      }
+      
+      const html = await response.text();
+      const htmlLength = html.length;
+      
+      // Debug info
+      if (htmlLength < 1000) {
+        console.log(`WARNING: HTML response is suspiciously short (${htmlLength} chars).`);
+      }
+      
+      // Extract job links from the page - we'll combine multiple extraction methods
+      const jobLinks: string[] = [];
+      
+      // Method 1: Direct URL extraction with regex
+      const jobUrlRegex = /https:\/\/jobs\.workable\.com\/view\/[A-Za-z0-9]+(?:\/[^"'\s]+)?/g;
+      let match;
+      while ((match = jobUrlRegex.exec(html)) !== null) {
+        jobLinks.push(match[0]);
+      }
+      
+      // Method 2: HTML link parsing
+      const jobCardRegex = /<a [^>]*href="([^"]*\/view\/[A-Za-z0-9]+(?:\/[^"'\s]+)?)"[^>]*>/g;
+      while ((match = jobCardRegex.exec(html)) !== null) {
+        const jobUrl = match[1];
+        if (jobUrl.startsWith('/')) {
+          jobLinks.push(`https://jobs.workable.com${jobUrl}`);
+        } else if (jobUrl.startsWith('http')) {
+          jobLinks.push(jobUrl);
+        }
+      }
+      
+      // Method 3: JSON-LD extraction (structured data)
+      const scriptRegex = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g;
+      while ((match = scriptRegex.exec(html)) !== null) {
+        try {
+          const jsonData = JSON.parse(match[1]);
+          if (jsonData["@type"] === "JobPosting" && jsonData.url) {
+            jobLinks.push(jsonData.url);
+          }
+        } catch (e) {
+          console.error("Error parsing JSON-LD:", e);
+        }
+      }
+      
+      // Deduplicate the links
+      const uniqueLinks = Array.from(new Set(jobLinks));
+      
+      // NEW: Calculate page metrics for tracking effectiveness
+      const totalJobsOnPage = uniqueLinks.length;
+      console.log(`Found ${totalJobsOnPage} unique job links on page ${currentPage} for query "${query}"`);
+      
+      // Filter out already processed jobs
+      let newLinks = uniqueLinks;
+      if (state) {
+        newLinks = uniqueLinks.filter(link => {
+          const potentialId = link.split('/').pop();
+          return potentialId && !state.jobIds.has(potentialId);
+        });
+      }
+      
+      // NEW: Track new vs total for effectiveness metrics
+      const newJobsFound = newLinks.length;
+      const duplicateJobsFound = totalJobsOnPage - newJobsFound;
+      
+      // Calculate effectiveness score (0-1): ratio of new jobs to total jobs
+      // This helps prioritize which search paths are most productive
+      // Higher = more effective search, lower = more duplicates/exhausted
+      const effectivenessScore = totalJobsOnPage > 0 
+        ? newJobsFound / totalJobsOnPage 
+        : 0;
+      
+      console.log(`Page effectiveness: ${(effectivenessScore * 100).toFixed(1)}% (${newJobsFound} new, ${duplicateJobsFound} duplicates)`);
+      
+      // Store effectiveness metrics in search state
+      if (state) {
+        // Track effectiveness by query
+        const queryEffectivenessKey = `effectiveness_${query}`;
+        
+        // Use exponential moving average to smooth effectiveness values
+        const previousEffectiveness = state[queryEffectivenessKey] || 0;
+        const alpha = 0.3; // Weighting for new values (0.3 = 30% weight to new value)
+        
+        state[queryEffectivenessKey] = (previousEffectiveness * (1 - alpha)) + (effectivenessScore * alpha);
+        
+        // Record the last page processed 
+        state[`last_page_${query}`] = currentPage;
+      }
+      
+      // Limit the number of jobs to fetch at once to reduce load
+      const MAX_JOBS_PER_PAGE = 20;
+      const jobsToProcess = newLinks.slice(0, MAX_JOBS_PER_PAGE);
+      
+      // Handle case of no new jobs on this page
+      if (jobsToProcess.length === 0) {
+        if (state) {
+          // Track consecutive empty pages to know when to stop
+          const emptyPagesKey = `empty_pages_${query}`;
+          const consecutiveEmptyPages = (state[emptyPagesKey] || 0) + (jobsToProcess.length === 0 ? 1 : 0);
+          state[emptyPagesKey] = consecutiveEmptyPages;
+          
+          // Adaptive page limit - if query has been effective, we'll check more pages
+          let maxEmptyPages = 3;
+          
+          if (state[`effectiveness_${query}`] > 0.4) {
+            // For high-yield queries, go deeper
+            maxEmptyPages = 5;
+          }
+          
+          if (totalJobsOnPage === 0) {
+            // Truly empty page = end of results, stop pagination
+            console.log(`Empty page (no jobs) for query "${query}". End of results reached.`);
+            return [];
+          } else if (consecutiveEmptyPages < maxEmptyPages) {
+            // All duplicates but not at limit, continue to next page with lower priority
+            console.log(`All ${totalJobsOnPage} jobs already processed. This is empty page #${consecutiveEmptyPages}/${maxEmptyPages}`);
+            
+            // Add next page with lower priority
+            const nextPageUrl = this.generateNextPageUrl(searchUrl, currentPage + 1);
+            if (nextPageUrl && !state.searchUrls.some(u => u.url === nextPageUrl) && !state.processedUrls.includes(nextPageUrl)) {
+              // Lower priority based on consecutive empty pages
+              const priority = Math.max(0.2, 0.8 - (consecutiveEmptyPages * 0.2));
+              
+              state.searchUrls.push({ url: nextPageUrl, priority });
+              console.log(`Added next page with reduced priority ${priority.toFixed(2)} due to consecutive empty pages`);
+            }
+          } else {
+            // Reached max empty pages, stop pagination for this query
+            console.log(`Reached ${maxEmptyPages} consecutive pages with all duplicate jobs. Stopping pagination for "${query}"`);
+          }
+        }
+        
+        // Mark this URL as processed
+        if (state) {
+          state.processedUrls.push(searchUrl);
+        }
+        
+        return [];
+      } else if (state) {
+        // Found new jobs, reset empty pages counter
+        state[`empty_pages_${query}`] = 0;
+      }
+      
+      // Fetch job details concurrently
+      console.log(`Fetching details for ${jobsToProcess.length} jobs concurrently...`);
+      
+      // Create array of promises, each fetching job details
+      const detailFetchPromises = jobsToProcess.map(jobLink =>
+        this.limiter.schedule(() => this.fetchJobDetailsWithTimeout(jobLink, jobDetailTimeoutMs))
+          .then(jobDetail => ({ link: jobLink, detail: jobDetail }))
+      );
+      
+      // Wait for all requests to complete or timeout
+      const results = await Promise.allSettled(detailFetchPromises);
+      
+      // Process the results
+      const jobListings: JobListing[] = [];
+      let successfulDetailsCount = 0;
+      
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value.detail) {
+          // Successfully fetched job details
+          const jobDetail = result.value.detail;
+          const jobLink = result.value.link;
+          successfulDetailsCount++;
+          
+          // Mark job ID as processed
+          if (state) {
+            const potentialId = jobLink.split('/').pop();
+            if (potentialId) state.jobIds.add(potentialId);
+          }
+          
+          // Calculate match score for job
+          const matchScore = this.calculateInitialMatchScore({
+            title: jobDetail.title,
+            company: jobDetail.company, 
+            description: jobDetail.description,
+            location: jobDetail.location
+          });
+          
+          // Add to job listings
+          jobListings.push({
+            jobTitle: jobDetail.title,
+            company: jobDetail.company,
+            description: jobDetail.description,
+            applyUrl: jobLink,
+            location: jobDetail.location,
+            source: 'workable',
+            matchScore
+          });
+        }
+      });
+      
+      console.log(`Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl}`);
+      
+      // Update search state with results
+      if (state) {
+        // Mark this URL as processed
+        state.processedUrls.push(searchUrl);
+        
+        // Update total job count
+        state.totalJobsFound += jobListings.length;
+        
+        // Calculate average match score for this page (if jobs found)
+        const avgMatchScore = jobListings.length > 0
+          ? jobListings.reduce((sum, job) => sum + (job.matchScore || 0), 0) / jobListings.length
+          : 0;
+        
+        // Combined effectiveness score includes both job yield and match quality
+        const combinedEffectiveness = effectivenessScore * (avgMatchScore / 100);
+        
+        // IMPROVED PAGINATION STRATEGY: Prioritize based on quality and quantity
+        // Continue pagination if:
+        // 1. Found new jobs (effectiveness > 0)
+        // 2. Not hit the maximum page limit
+        // 3. Query is not exhausted (consecutively empty pages < limit)
+        const MAX_PAGES = 5; // Limit to 5 pages per query
+        
+        if (currentPage < MAX_PAGES && 
+            (effectivenessScore > 0 || totalJobsOnPage === 0)) {
+          
+          const nextPageUrl = this.generateNextPageUrl(searchUrl, currentPage + 1);
+          
+          if (nextPageUrl && 
+              !state.searchUrls.some(u => u.url === nextPageUrl) && 
+              !state.processedUrls.includes(nextPageUrl)) {
+            
+            // Calculate priority for next page:
+            // - Higher effectiveness = higher priority
+            // - Higher match scores = higher priority
+            // - First few pages get higher priority by default
+            let basePriority = effectivenessScore;
+            
+            // Boost priority for high-quality results
+            if (avgMatchScore > 80) basePriority += 0.2;
+            
+            // Cap at 0.9 to ensure initial search URLs maintain highest priority
+            const priority = Math.min(0.9, Math.max(0.1, basePriority));
+            
+            // Add to queue with calculated priority
+            state.searchUrls.push({ url: nextPageUrl, priority });
+            
+            console.log(`Added next page ${currentPage + 1} to queue with priority ${priority.toFixed(2)}`);
+          }
+        } else {
+          console.log(`Not adding next page: reached limit (${currentPage}/${MAX_PAGES}) or low effectiveness`);
+        }
+      }
+      
+      return jobListings;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Error scraping jobs from ${searchUrl}:`, errorMsg);
+      
+      // Enhanced error handling with exponential backoff
+      if (state) {
+        // Extract query and page information from URL if possible
+        let queryValue = "unknown";
+        let pageNumber = 1;
+        
+        try {
+          // Try to extract query from URL
+          const urlObj = new URL(searchUrl);
+          queryValue = urlObj.searchParams.get('query') || "unknown";
+          pageNumber = parseInt(urlObj.searchParams.get('page') || '1', 10);
+        } catch (e) {
+          console.error("Could not parse URL for error tracking:", e);
+        }
+        
+        // Use a more detailed error key that includes query information
+        const errorKey = `exception_${queryValue}_page${pageNumber}`;
+        const attempts = (state[errorKey] || 0) + 1;
+        state[errorKey] = attempts;
+        
+        // Only retry a limited number of times with exponential backoff
+        if (attempts <= 3) {
+          // Calculate exponential backoff priority - gets lower with each retry
+          const backoffPriority = Math.max(0.01, 0.25 / Math.pow(2, attempts));
+          
+          // Re-queue with decreasing priority
+          state.searchUrls.push({ 
+            url: searchUrl, 
+            priority: backoffPriority
+          });
+          
+          console.log(`URL fetch failed with exception, re-queued with priority ${backoffPriority.toFixed(3)} (attempt ${attempts})`);
+          
+          // Log the exception for pattern analysis
+          this.logProblemUrl(searchUrl, "exception", {
+            errorMessage: errorMsg.substring(0, 500),
+            query: queryValue,
+            page: pageNumber,
+            attempt: attempts,
+            timestamp: new Date().toISOString()
+          });
+          
+          // Don't consider this processed yet - we need to retry
+          state.processedUrls = state.processedUrls.filter(url => url !== searchUrl);
+        } else {
+          console.log(`URL fetch failed ${attempts} times with exceptions, giving up: ${searchUrl}`);
+          
+          // Mark as processed to avoid infinite retries
+          state.processedUrls.push(searchUrl);
+          
+          // Log final failure
+          this.logProblemUrl(searchUrl, "exception_max_retries", {
+            errorMessage: errorMsg.substring(0, 500),
+            query: queryValue,
+            page: pageNumber,
+            finalAttempt: attempts,
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+      
+      return [];
+    }
+  }
