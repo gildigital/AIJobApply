@@ -29,13 +29,36 @@ Built to save users hours of manual job hunting and applying, AIJobApply uses re
 
 ## 🛠️ Tech Stack
 
-- **Frontend:** React, TailwindCSS, Vite
-- **Backend:** Node.js, Express
-- **Scraping:** Playwright automation
-- **Database:** PostgreSQL (via Drizzle ORM)
-- **Authentication:** Magic Links (passwordless login)
-- **Payments:** Stripe integration
-- **Hosting:** Railway (for Playwright Workers and backend services)
+### 🧩 Frontend
+- **React** with **TypeScript** for component-driven UI
+- **Vite** for fast development and bundling
+- **TailwindCSS** + **shadcn/ui** for modern styling and accessible components
+- **TanStack React Query** for efficient client-side data fetching and caching
+- **Wouter** for lightweight routing
+- **React Hook Form** + **Zod** for robust form handling and validation
+- **Recharts** for dynamic data visualization
+
+### ⚙️ Backend
+- **Node.js** with **Express** and **TypeScript**
+- **PostgreSQL** hosted on **Neon (serverless)**
+- **Drizzle ORM** for type-safe SQL queries
+- **Passport.js** + **Express-Session** for secure, session-based authentication
+
+### 🤖 AI & Automation
+- **Playwright** for headless browser automation and form introspection
+- **OpenAI API** for contextual cover letter and summary generation
+- **Anthropic Claude API** for long-form and complex prompt handling
+- **Schema-aware job processor** for dynamic form completion
+
+### 🏗️ Architecture
+- **Server-Sent Events (SSE)** for real-time job application progress updates
+- **Background workers** for asynchronous job submission and retry logic
+- **Tiered subscription model** with dynamic **rate limiting**
+
+### 🚀 DevOps & Infrastructure
+- **Railway** for deployment of backend services and Playwright workers
+- **Neon** for scalable serverless PostgreSQL hosting
+- **Stripe** for subscription billing and payment processing
 
 ---
 
