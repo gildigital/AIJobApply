@@ -41,3 +41,4 @@ async function extractTextFromPDFBase64(fileData: string): Promise<string> {
 }
 
 export { extractTextFromPDFBase64 };
+export { extractTextFromPDF } from './resume-parser';

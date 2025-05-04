@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -12,7 +13,7 @@ import { registerDiagnosticsRoutes } from "./routes/diagnostics-routes";
 const app = express();
 
 // Create a raw body parser for Stripe webhook requests
-const rawBodyParser = express.raw({type: 'application/json'});
+const rawBodyParser = express.raw({ type: 'application/json' });
 
 // Special handling for the webhook route to get the raw body
 app.use('/api/webhook', rawBodyParser);
@@ -67,7 +68,7 @@ app.use((req, res, next) => {
   registerDirectFetchTestRoutes(app);
   registerWorkableDirectFetch(app);
   registerWorkableTestRoutes(app);
-  
+
   // Register diagnostics routes for development
   if (process.env.NODE_ENV === 'development') {
     registerDiagnosticsRoutes(app);

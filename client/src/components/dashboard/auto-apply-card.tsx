@@ -126,6 +126,16 @@ export default function AutoApplyCard() {
     },
   });
 
+  // Use useEffect to show toast for completion to prevent infinite re-renders
+  useEffect(() => {
+    if (status?.currentStatus === "Completed" && !status.isAutoApplyEnabled) {
+      toast({
+        title: "Auto-apply completed",
+        description: status.latestMessage,
+      });
+    }
+  }, [status?.currentStatus, status?.isAutoApplyEnabled, status?.latestMessage, toast]);
+
   // Check if the process is still running and manage polling
   useEffect(() => {
     if (status) {
@@ -136,13 +146,6 @@ export default function AutoApplyCard() {
     }
   }, [status]); // Removed toast from dependencies
 
-  const handleStartAutoApply = () => {
-    startAutoApplyMutation.mutate();
-  };
-
-  const handleStopAutoApply = () => {
-    stopAutoApplyMutation.mutate();
-  };
 
   // Show loading state
   if (isLoading) {
@@ -194,13 +197,13 @@ export default function AutoApplyCard() {
     );
   }
 
-  // Show toast for completion (moved from useEffect to onSuccess)
-  if (status.currentStatus === "Completed" && !status.isAutoApplyEnabled) {
-    toast({
-      title: "Auto-apply completed",
-      description: status.latestMessage,
-    });
-  }
+  const handleStartAutoApply = () => {
+    startAutoApplyMutation.mutate();
+  };
+
+  const handleStopAutoApply = () => {
+    stopAutoApplyMutation.mutate();
+  };
 
   // Get the appropriate status badge color
   const getStatusBadgeVariant = (
@@ -283,7 +286,7 @@ export default function AutoApplyCard() {
         <Alert
           className={
             status.currentStatus === "Error" ||
-            status.currentStatus === "Failed"
+              status.currentStatus === "Failed"
               ? "border-destructive"
               : status.currentStatus === "Completed"
                 ? "border-green-500"
@@ -293,7 +296,7 @@ export default function AutoApplyCard() {
           }
         >
           {status.currentStatus === "Error" ||
-          status.currentStatus === "Failed" ? (
+            status.currentStatus === "Failed" ? (
             <AlertCircle className="h-4 w-4 text-destructive" />
           ) : status.currentStatus === "Started" ||
             status.currentStatus === "Searching" ||
@@ -308,13 +311,13 @@ export default function AutoApplyCard() {
           )}
           <AlertTitle>
             {status.currentStatus === "Error" ||
-            status.currentStatus === "Failed"
+              status.currentStatus === "Failed"
               ? "Error"
               : status.currentStatus === "Started" ||
-                  status.currentStatus === "Searching" ||
-                  status.currentStatus === "Processing" ||
-                  status.currentStatus === "Evaluating" ||
-                  status.currentStatus === "In Progress"
+                status.currentStatus === "Searching" ||
+                status.currentStatus === "Processing" ||
+                status.currentStatus === "Evaluating" ||
+                status.currentStatus === "In Progress"
                 ? "In Progress"
                 : status.currentStatus === "Standby"
                   ? "Standby Mode Active"
