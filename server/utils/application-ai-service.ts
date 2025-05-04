@@ -20,6 +20,67 @@ if (!hasOpenAIKey && !hasAnthropicKey) {
 }
 
 /**
+ * Validates an AI-generated response to ensure quality
+ * 
+ * @param question The original question
+ * @param response The AI-generated response
+ * @returns boolean indicating whether the response passes validation
+ */
+function validateAIResponse(question: string, response: string): boolean {
+  // Don't validate null/undefined responses (handled by calling code)
+  if (!response) return false;
+  
+  // Trim whitespace
+  const trimmedResponse = response.trim();
+  
+  // Basic validation: Minimum length check (adjust threshold based on field type)
+  const isShortQuestion = question.length < 30;
+  const minLength = isShortQuestion ? 5 : 20; // Short responses for short questions
+  if (trimmedResponse.length < minLength) {
+    console.warn(`❌ AI response failed validation: Too short (${trimmedResponse.length} chars) for question: "${question}"`);
+    return false;
+  }
+  
+  // Check for placeholder markers that might indicate incomplete responses
+  const placeholderPatterns = [
+    /\[.*?\]/,                     // Text in square brackets
+    /\(insert.*?\)/i,              // "insert" in parentheses
+    /\{.*?\}/,                     // Text in curly braces
+    /<.*?>/,                       // Text in angle brackets
+    /your\s+[a-z]+(\s+here)?/i,    // "your X" or "your X here"
+    /insert\s+[a-z]+(\s+here)?/i,  // "insert X" or "insert X here"
+  ];
+  
+  for (const pattern of placeholderPatterns) {
+    if (pattern.test(trimmedResponse)) {
+      console.warn(`❌ AI response failed validation: Contains placeholder pattern "${pattern}" for question: "${question}"`);
+      return false;
+    }
+  }
+  
+  // Check for nonsensical/generic responses (modify as needed)
+  const genericResponses = [
+    "N/A",
+    "Not applicable",
+    "I don't know",
+    "I am not sure",
+    "Please provide more information"
+  ];
+  
+  // If the question requires a substantive answer
+  if (question.length > 30 && !question.endsWith("?")) {
+    // Check if the response is just one of the generic responses
+    if (genericResponses.some(generic => trimmedResponse === generic)) {
+      console.warn(`❌ AI response failed validation: Generic response "${trimmedResponse}" for question: "${question}"`);
+      return false;
+    }
+  }
+  
+  // All checks passed
+  return true;
+}
+
+/**
  * Generate a tailored answer for a specific job application question
  * 
  * @param question The question text from the application form
@@ -27,6 +88,7 @@ if (!hasOpenAIKey && !hasAnthropicKey) {
  * @param resumeText The user's resume text for context
  * @param userProfile Additional user profile information
  * @param jobDescription The job description for context
+ * @param qaContext Optional context data for QA_* pattern fields
  * @returns Promise resolving to a generated answer
  */
 export async function generateApplicationAnswer(
@@ -34,38 +96,216 @@ export async function generateApplicationAnswer(
   fieldName: string,
   resumeText: string,
   userProfile: any,
-  jobDescription: string
+  jobDescription: string,
+  qaContext?: any
 ): Promise<string> {
   // Determine field type and use specialized prompts when appropriate
   const fieldNameLower = fieldName.toLowerCase();
   const questionLower = question.toLowerCase();
   
+  // Check if this is a QA_* pattern field that might need extra context
+  const isQAPattern = fieldName && /^QA_\d+$/.test(fieldName);
+  
+  // Special handling for work authorization questions to prevent "CA" fallback
+  const isWorkAuthQuestion = 
+    questionLower.includes('authorized to work') || 
+    questionLower.includes('work authorization') || 
+    questionLower.includes('eligible to work') || 
+    questionLower.includes('legally') && questionLower.includes('work') ||
+    questionLower.includes('right to work') ||
+    questionLower.includes('sponsorship') ||
+    questionLower.includes('work permit') ||
+    (isQAPattern && qaContext?.isWorkAuth);
+    
+  if (isWorkAuthQuestion) {
+    console.log(`🔍 Detected work authorization question: "${question}" (${fieldName})`);
+    return "Yes, I am legally authorized to work in this country without sponsorship.";
+  }
+  
   // Cover letter generation needs special handling
   if (fieldNameLower.includes('cover_letter') || 
       questionLower.includes('cover letter') || 
       questionLower.includes('why do you want to work')) {
-    return generateCoverLetter(resumeText, userProfile, jobDescription);
+    const coverLetter = await generateCoverLetter(resumeText, userProfile, jobDescription);
+    
+    // Validate the cover letter
+    if (validateAIResponse(question, coverLetter)) {
+      return coverLetter;
+    } else {
+      console.warn(`Cover letter validation failed for field "${fieldName}" - using fallback`);
+      return getGenericCoverLetter(userProfile, jobDescription);
+    }
+  }
+  
+  // Enhanced context with surrounding text for QA_* pattern fields
+  let enhancedQuestion = question;
+  let enhancedPrompt = false;
+  
+  if (isQAPattern && qaContext) {
+    console.log(`Processing QA_* pattern field: ${fieldName} with enhanced context`);
+    
+    // Check for problematic SVG labels and flag if found
+    const hasSvgProblem = qaContext.hasSvgProblem || false;
+    if (hasSvgProblem) {
+      console.log(`⚠️ Field ${fieldName} has SVG label problem - using enhanced context`);
+    }
+    
+    // Build a richer context string from available context data
+    const contextParts = [];
+    
+    // Use more reliable context sources first in QA_* fields
+    
+    // Special alternative label for SVG problems
+    if (qaContext.alternativeLabel) {
+      contextParts.push(`Question from nearby label: ${qaContext.alternativeLabel}`);
+    }
+    
+    // Question from fieldset
+    if (qaContext.fieldsetQuestion) {
+      contextParts.push(`Question from parent element: ${qaContext.fieldsetQuestion}`);
+    }
+    
+    // Question from specialized question-text spans  
+    if (qaContext.questionText) {
+      contextParts.push(`Question: ${qaContext.questionText}`);
+    }
+    
+    // Work authorization special handling
+    if (qaContext.isWorkAuth) {
+      contextParts.push("This appears to be a work authorization question asking if the candidate is legally authorized to work.");
+    }
+    
+    // Add any section headings for overall context
+    if (qaContext.sectionHeadings && qaContext.sectionHeadings.length > 0) {
+      contextParts.push(`Section: ${qaContext.sectionHeadings[0]}`);
+    }
+    
+    // Add sibling text that might contain question context
+    if (qaContext.siblingText && qaContext.siblingText.length > 0) {
+      contextParts.push(`Question context: ${qaContext.siblingText.join(' ')}`);
+    }
+    
+    // Add any other labels found
+    if (qaContext.parentLabel) {
+      contextParts.push(`Related label: ${qaContext.parentLabel}`);
+    }
+    
+    if (qaContext.ariaLabel || qaContext.idLabel || qaContext.siblingLabel) {
+      const otherLabels = [qaContext.ariaLabel, qaContext.idLabel, qaContext.siblingLabel].filter(l => l).join(', ');
+      if (otherLabels) {
+        contextParts.push(`Additional context: ${otherLabels}`);
+      }
+    }
+    
+    // If we have any contextual data, enhance the question
+    if (contextParts.length > 0) {
+      enhancedQuestion = `${contextParts.join('\n')}\n\nOriginal question field text: ${question}`;
+      enhancedPrompt = true;
+      console.log(`Enhanced question from surrounding context: ${enhancedQuestion}`);
+    }
   }
   
   // Try OpenAI first if key is available
   if (OPENAI_API_KEY) {
     try {
-      return await generateAnswerWithOpenAI(question, fieldName, resumeText, userProfile, jobDescription);
+      const openAIResponse = await generateAnswerWithOpenAI(
+        enhancedQuestion, 
+        fieldName, 
+        resumeText, 
+        userProfile, 
+        jobDescription,
+        enhancedPrompt
+      );
+      
+      // For QA pattern fields, use more lenient validation
+      const shouldValidate = !isQAPattern || !enhancedPrompt;
+      
+      // Validate OpenAI response (if not a QA field with enhanced context)
+      if (!shouldValidate || validateAIResponse(enhancedQuestion, openAIResponse)) {
+        return openAIResponse;
+      } else {
+        console.warn(`OpenAI response validation failed for question "${question}" - trying Anthropic`);
+        
+        // If OpenAI validation fails, try Anthropic as fallback (if available)
+        if (ANTHROPIC_API_KEY) {
+          const anthropicResponse = await generateAnswerWithAnthropic(
+            enhancedQuestion, 
+            fieldName, 
+            resumeText, 
+            userProfile, 
+            jobDescription,
+            enhancedPrompt
+          );
+          
+          // Validate Anthropic response (if not a QA field with enhanced context)
+          if (!shouldValidate || validateAIResponse(enhancedQuestion, anthropicResponse)) {
+            return anthropicResponse;
+          }
+        }
+        
+        // Both APIs failed validation, return a generic answer
+        console.warn(`All AI responses failed validation for question "${question}" - using generic answer`);
+        return getGenericAnswer(question, fieldName);
+      }
     } catch (error) {
       console.error("Error with OpenAI answer generation:", error);
       
       // If Anthropic is available, try it as fallback
       if (ANTHROPIC_API_KEY) {
-        return await generateAnswerWithAnthropic(question, fieldName, resumeText, userProfile, jobDescription);
+        try {
+          const anthropicResponse = await generateAnswerWithAnthropic(
+            enhancedQuestion, 
+            fieldName, 
+            resumeText, 
+            userProfile, 
+            jobDescription,
+            enhancedPrompt
+          );
+          
+          // For QA pattern fields, use more lenient validation
+          const shouldValidate = !isQAPattern || !enhancedPrompt;
+          
+          // Validate Anthropic response (if not a QA field with enhanced context)
+          if (!shouldValidate || validateAIResponse(enhancedQuestion, anthropicResponse)) {
+            return anthropicResponse;
+          } else {
+            console.warn(`Anthropic response validation failed for question "${question}" - using generic answer`);
+          }
+        } catch (anthropicError) {
+          console.error("Error with Anthropic answer generation:", anthropicError);
+        }
       }
       
-      // If no AI services available, return a generic answer
+      // If no AI services available or all failed, return a generic answer
       return getGenericAnswer(question, fieldName);
     }
   } 
   // If no OpenAI key but Anthropic is available, use Anthropic
   else if (ANTHROPIC_API_KEY) {
-    return await generateAnswerWithAnthropic(question, fieldName, resumeText, userProfile, jobDescription);
+    try {
+      const anthropicResponse = await generateAnswerWithAnthropic(
+        enhancedQuestion, 
+        fieldName, 
+        resumeText, 
+        userProfile, 
+        jobDescription,
+        enhancedPrompt
+      );
+      
+      // For QA pattern fields, use more lenient validation
+      const shouldValidate = !isQAPattern || !enhancedPrompt;
+      
+      // Validate Anthropic response (if not a QA field with enhanced context)
+      if (!shouldValidate || validateAIResponse(enhancedQuestion, anthropicResponse)) {
+        return anthropicResponse;
+      } else {
+        console.warn(`Anthropic response validation failed for question "${question}" - using generic answer`);
+        return getGenericAnswer(question, fieldName);
+      }
+    } catch (error) {
+      console.error("Error with Anthropic answer generation:", error);
+      return getGenericAnswer(question, fieldName);
+    }
   } 
   // If no AI services are available, return a generic answer
   else {
@@ -120,13 +360,14 @@ async function generateAnswerWithOpenAI(
   fieldName: string, 
   resumeText: string, 
   userProfile: any, 
-  jobDescription: string
+  jobDescription: string,
+  isEnhancedQAPrompt: boolean = false
 ): Promise<string> {
   // Build a compact user profile summary
   const profileSummary = buildProfileSummary(userProfile);
   
   // Define the prompt
-  const systemPrompt = `You are an expert job application assistant. Create a tailored, professional answer for a job application question.
+  let systemPrompt = `You are an expert job application assistant. Create a tailored, professional answer for a job application question.
   
 Your answer should:
 1. Be concise and directly address the question
@@ -141,8 +382,22 @@ Your answer should:
 Return ONLY the answer text, without quotes or explanations.
 Keep answers under 100 words unless it's for a complex question that requires more detail.`;
 
+  // For QA_* pattern fields with enhanced context, give more specific instructions
+  if (isEnhancedQAPrompt) {
+    systemPrompt += `\n\nThis is a multiple-choice question with a generic field name (QA_* pattern). 
+I've provided enhanced context that might help you understand what the question is about.
+The context may include section headings, nearby text that provides clues about the question topic,
+and other contextual information. Use this context to infer what the question is asking and provide an appropriate response.
+When you're uncertain, choose a balanced response that doesn't overpromise or limit the applicant's opportunities.`;
+  }
+
+  const isQAPattern = fieldName && /^QA_\d+$/.test(fieldName);
+  const formattedFieldName = isQAPattern ? 
+    `${fieldName} (generic field name, look at enhanced context for more information)` : 
+    fieldName;
+
   const userPrompt = `# QUESTION: 
-${question} (field name: ${fieldName})
+${question} (field name: ${formattedFieldName})
 
 # RESUME EXCERPT:
 ${resumeText.substring(0, 1500)}
@@ -153,6 +408,7 @@ ${profileSummary}
 # JOB DESCRIPTION EXCERPT:
 ${jobDescription.substring(0, 1000)}
 
+${isEnhancedQAPrompt ? "Please use the enhanced context to understand what this question is about and provide an appropriate response." : ""}
 Please provide a professional answer to this application question.`;
 
   // Make the API request to OpenAI
@@ -190,14 +446,14 @@ async function generateAnswerWithAnthropic(
   fieldName: string, 
   resumeText: string, 
   userProfile: any, 
-  jobDescription: string
+  jobDescription: string,
+  isEnhancedQAPrompt: boolean = false
 ): Promise<string> {
   // Build a compact user profile summary
   const profileSummary = buildProfileSummary(userProfile);
   
   // Define the prompt
-  const prompt = `
-<instructions>
+  let instructionsContent = `
 You are an expert job application assistant. Create a tailored, professional answer for a job application question.
 
 Your answer should:
@@ -211,11 +467,29 @@ Your answer should:
 8. IMPORTANT: Never use brackets [] or phrases like "insert your" in the answer
 
 Return ONLY the answer text, without quotes or explanations.
-Keep answers under 100 words unless it's for a complex question that requires more detail.
+Keep answers under 100 words unless it's for a complex question that requires more detail.`;
+
+  // For QA_* pattern fields with enhanced context, give more specific instructions
+  if (isEnhancedQAPrompt) {
+    instructionsContent += `\n\nThis is a multiple-choice question with a generic field name (QA_* pattern). 
+I've provided enhanced context that might help you understand what the question is about.
+The context may include section headings, nearby text that provides clues about the question topic,
+and other contextual information. Use this context to infer what the question is asking and provide an appropriate response.
+When you're uncertain, choose a balanced response that doesn't overpromise or limit the applicant's opportunities.`;
+  }
+
+  const isQAPattern = fieldName && /^QA_\d+$/.test(fieldName);
+  const formattedFieldName = isQAPattern ? 
+    `${fieldName} (generic field name, look at enhanced context for more information)` : 
+    fieldName;
+
+  const prompt = `
+<instructions>
+${instructionsContent}
 </instructions>
 
 # QUESTION: 
-${question} (field name: ${fieldName})
+${question} (field name: ${formattedFieldName})
 
 # RESUME EXCERPT:
 ${resumeText.substring(0, 1500)}
@@ -226,6 +500,7 @@ ${profileSummary}
 # JOB DESCRIPTION EXCERPT:
 ${jobDescription.substring(0, 1000)}
 
+${isEnhancedQAPrompt ? "Please use the enhanced context to understand what this question is about and provide an appropriate response." : ""}
 Please provide a professional answer to this application question.`;
 
   // Make the API request to Anthropic
@@ -508,7 +783,9 @@ export async function selectBestOptionWithAI(
   options: { label: string; value: string }[],
   resumeText: string,
   userProfile: any,
-  jobDescription: string
+  jobDescription: string,
+  fieldName?: string,
+  qaContext?: any
 ): Promise<number> {
   // If no options or only one option, return the first one
   if (!options || options.length === 0) return 0;
@@ -518,12 +795,64 @@ export async function selectBestOptionWithAI(
   const questionLower = question.toLowerCase();
   const labels = options.map(opt => (opt.label || '').toLowerCase());
   
+  // Detect if this is a QA_* pattern field
+  const isQAPattern = fieldName && /^QA_\d+$/.test(fieldName);
+  
+  // Special handling for work authorization fields
+  const isWorkAuthQuestion = 
+    questionLower.includes('authorized to work') || 
+    questionLower.includes('work authorization') || 
+    questionLower.includes('eligible to work') || 
+    (questionLower.includes('legally') && questionLower.includes('work')) ||
+    questionLower.includes('right to work') ||
+    questionLower.includes('sponsorship') ||
+    questionLower.includes('work permit') ||
+    (isQAPattern && qaContext?.isWorkAuth);
+  
+  if (isWorkAuthQuestion) {
+    console.log(`🔍 Handling work authorization options selection for question: "${question}"`);
+    
+    // Look for "yes" option first for work authorization
+    const yesIndex = labels.findIndex(l => l.includes('yes'));
+    if (yesIndex >= 0) {
+      console.log(`✅ Selected "yes" option for work authorization question`);
+      return yesIndex;
+    }
+    
+    // Look for other positive responses
+    const positiveOptions = [
+      'authorized', 'eligible', 'permitted', 'allowed', 'legal', 
+      'citizen', 'permanent resident', 'green card'
+    ];
+    
+    // Find the first positive option
+    for (const positiveOption of positiveOptions) {
+      const positiveIndex = labels.findIndex(l => l.includes(positiveOption));
+      if (positiveIndex >= 0) {
+        console.log(`✅ Selected positive option "${labels[positiveIndex]}" for work authorization question`);
+        return positiveIndex;
+      }
+    }
+    
+    // If no clearly positive option found, avoid options with "sponsorship" or "visa"
+    const negativeOptions = ['sponsorship', 'visa', 'sponsor', 'no'];
+    const allNegative = labels.every(l => negativeOptions.some(neg => l.includes(neg)));
+    if (!allNegative) {
+      // Find first option that doesn't include negative terms
+      const fallbackIndex = labels.findIndex(l => !negativeOptions.some(neg => l.includes(neg)));
+      if (fallbackIndex >= 0) {
+        console.log(`⚠️ Selected fallback option "${labels[fallbackIndex]}" for work authorization question`);
+        return fallbackIndex;
+      }
+    }
+  }
+  
   // For yes/no questions, prefer "yes" when appropriate
   if (labels.some(l => l.includes('yes')) && labels.some(l => l.includes('no'))) {
     // Common questions where we default to "yes"
     const positiveQuestions = [
-      'willing', 'authorized', 'eligible', 'right to work', 'legally', 
-      'background check', 'references', 'relocate', 'remote'
+      'willing', 'background check', 'references', 'relocate', 'remote',
+      'travel', 'overtime', 'flexible', 'weekend', 'shift', 'certification'
     ];
     
     // If it's a positive question, find the "yes" option

@@ -340,3 +340,33 @@ export const onlinePresenceSchema = z.object({
 export type ContactInfo = z.infer<typeof contactInfoSchema>;
 export type JobPreferences = z.infer<typeof jobPreferencesSchema>;
 export type OnlinePresence = z.infer<typeof onlinePresenceSchema>;
+
+// Form field schema interface for handling form introspection
+export interface FormField {
+  name?: string;
+  dataUi?: string;
+  id?: string;
+  label?: string;
+  type: string;
+  required: boolean;
+  options?: {label: string; value: string}[];
+  selector?: string; // Unified selector for reliable field location
+  
+  // Enhanced properties for QA_* pattern fields
+  isQAPattern?: boolean; // Flag if this is a QA_* pattern field with generic name
+  qaContext?: {
+    ariaLabel?: string;        // Label from aria-labelledby
+    idLabel?: string;          // Label from for attribute matching id
+    placeholder?: string;      // Placeholder text
+    parentLabel?: string;      // Label from parent element
+    siblingLabel?: string;     // Label from sibling element
+    siblingText?: string[];    // Context from surrounding sibling elements
+    sectionHeadings?: string[]; // Section headings that might provide context
+  };
+}
+
+// Form schema interface for introspection API
+export interface FormSchema {
+  status: string;
+  fields: FormField[];
+}
