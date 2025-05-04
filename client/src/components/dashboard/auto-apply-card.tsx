@@ -204,7 +204,7 @@ export default function AutoApplyCard() {
 
   // Get the appropriate status badge color
   const getStatusBadgeVariant = (
-    status: string
+    status: string,
   ): "default" | "destructive" | "secondary" | "outline" => {
     switch (status) {
       case "Started":
@@ -228,7 +228,7 @@ export default function AutoApplyCard() {
   };
 
   return (
-    <Card>
+    <Card id="auto-apply-card">
       <CardHeader>
         <div className="flex justify-between items-center">
           <div>
@@ -255,7 +255,7 @@ export default function AutoApplyCard() {
           <Progress
             value={Math.min(
               100,
-              (status.appliedToday / (status.totalLimit || 100)) * 100
+              (status.appliedToday / (status.totalLimit || 100)) * 100,
             )}
             className="h-2"
           />
@@ -286,10 +286,10 @@ export default function AutoApplyCard() {
             status.currentStatus === "Failed"
               ? "border-destructive"
               : status.currentStatus === "Completed"
-              ? "border-green-500"
-              : status.currentStatus === "Standby"
-              ? "border-amber-500"
-              : ""
+                ? "border-green-500"
+                : status.currentStatus === "Standby"
+                  ? "border-amber-500"
+                  : ""
           }
         >
           {status.currentStatus === "Error" ||
@@ -311,14 +311,14 @@ export default function AutoApplyCard() {
             status.currentStatus === "Failed"
               ? "Error"
               : status.currentStatus === "Started" ||
-                status.currentStatus === "Searching" ||
-                status.currentStatus === "Processing" ||
-                status.currentStatus === "Evaluating" ||
-                status.currentStatus === "In Progress"
-              ? "In Progress"
-              : status.currentStatus === "Standby"
-              ? "Standby Mode Active"
-              : "Status"}
+                  status.currentStatus === "Searching" ||
+                  status.currentStatus === "Processing" ||
+                  status.currentStatus === "Evaluating" ||
+                  status.currentStatus === "In Progress"
+                ? "In Progress"
+                : status.currentStatus === "Standby"
+                  ? "Standby Mode Active"
+                  : "Status"}
           </AlertTitle>
           <AlertDescription>
             {status.latestMessage ||

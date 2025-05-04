@@ -104,7 +104,7 @@ export function SubscriptionManagement() {
   const handleCancel = () => {
     if (
       window.confirm(
-        "Are you sure you want to cancel your subscription? You'll still have access until the end of your billing period."
+        "Are you sure you want to cancel your subscription? You'll still have access until the end of your billing period.",
       )
     ) {
       cancelSubscriptionMutation.mutate();

@@ -44,15 +44,16 @@ const jobTypes = [
 
 // Experience levels
 const experienceLevels = [
-  { value: "entry", label: "Entry Level" },
-  { value: "mid", label: "Mid Level" },
-  { value: "senior", label: "Senior Level" },
+  { value: "entry_level", label: "Entry Level" },
+  { value: "associate", label: "Associate" },
+  { value: "mid_senior_level", label: "Mid-Senior Level" },
+  { value: "director", label: "Director" },
   { value: "executive", label: "Executive" },
 ];
 
-// Location types
-const locationTypes = [
-  { value: "onsite", label: "On-site" },
+// Workplace types
+const workplaceTypes = [
+  { value: "on-site", label: "On-site" },
   { value: "remote", label: "Remote" },
   { value: "hybrid", label: "Hybrid" },
 ];
@@ -69,7 +70,14 @@ export function JobPreferencesForm() {
       minSalaryExpectation: profile?.minSalaryExpectation || undefined,
       excludedCompanies: profile?.excludedCompanies || [],
       willingToRelocate: profile?.willingToRelocate || false,
-      preferredWorkArrangement: profile?.preferredWorkArrangement || "full-time",
+      // Convert string to array if needed for backward compatibility
+      preferredWorkArrangement: (Array.isArray(profile?.preferredWorkArrangement) 
+        ? profile?.preferredWorkArrangement 
+        : profile?.preferredWorkArrangement ? [profile?.preferredWorkArrangement] : ["full-time"]) as ("full-time" | "part-time" | "contract" | "temporary" | "internship")[],
+      // Default to all workplace types if not set
+      workplaceOfInterest: (profile?.workplaceOfInterest || ["remote", "hybrid", "on-site"]) as ("remote" | "hybrid" | "on-site")[],
+      // Default to all experience levels if not set
+      jobExperienceLevel: (profile?.jobExperienceLevel || ["entry_level", "associate", "mid_senior_level"]) as ("entry_level" | "associate" | "mid_senior_level" | "director" | "executive")[],
       activeSecurityClearance: profile?.activeSecurityClearance || false,
       clearanceDetails: profile?.clearanceDetails || "",
       matchScoreThreshold: profile?.matchScoreThreshold || 70,
@@ -85,7 +93,14 @@ export function JobPreferencesForm() {
         minSalaryExpectation: profile.minSalaryExpectation || undefined,
         excludedCompanies: profile.excludedCompanies || [],
         willingToRelocate: profile.willingToRelocate || false,
-        preferredWorkArrangement: profile.preferredWorkArrangement || "full-time",
+        // Convert string to array if needed for backward compatibility
+        preferredWorkArrangement: (Array.isArray(profile.preferredWorkArrangement) 
+          ? profile.preferredWorkArrangement 
+          : profile.preferredWorkArrangement ? [profile.preferredWorkArrangement as any] : ["full-time"]) as ("full-time" | "part-time" | "contract" | "temporary" | "internship")[],
+        // Default to all workplace types if not set
+        workplaceOfInterest: (profile.workplaceOfInterest || ["remote", "hybrid", "on-site"]) as ("remote" | "hybrid" | "on-site")[],
+        // Default to all experience levels if not set
+        jobExperienceLevel: (profile.jobExperienceLevel || ["entry_level", "associate", "mid_senior_level"]) as ("entry_level" | "associate" | "mid_senior_level" | "director" | "executive")[],
         activeSecurityClearance: profile.activeSecurityClearance || false,
         clearanceDetails: profile.clearanceDetails || "",
         matchScoreThreshold: profile.matchScoreThreshold || 70,
@@ -148,24 +163,132 @@ export function JobPreferencesForm() {
               name="preferredWorkArrangement"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Preferred Work Arrangement</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    value={field.value || "full-time"}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select your preferred work arrangement" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem key="full-time" value="full-time">Full-time</SelectItem>
-                      <SelectItem key="contract" value="contract">Contract</SelectItem>
-                      <SelectItem key="remote" value="remote">Remote</SelectItem>
-                      <SelectItem key="hybrid" value="hybrid">Hybrid</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <FormLabel>Employment Type</FormLabel>
+                  <FormDescription>
+                    Select the types of employment you're interested in (optional - if none selected, we'll search all types)
+                  </FormDescription>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {[
+                      { value: "full-time", label: "Full-time" },
+                      { value: "part-time", label: "Part-time" },
+                      { value: "contract", label: "Contract" },
+                      { value: "temporary", label: "Temporary" },
+                      { value: "internship", label: "Internship" }
+                    ].map((option) => (
+                      <div key={option.value} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`employment-${option.value}`}
+                          checked={field.value?.includes(option.value as any)}
+                          onCheckedChange={(checked) => {
+                            const currentValues = field.value || [];
+                            if (checked) {
+                              field.onChange([...currentValues, option.value] as any);
+                            } else {
+                              field.onChange(
+                                currentValues.filter((value) => value !== option.value) as any
+                              );
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor={`employment-${option.value}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          {option.label}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="workplaceOfInterest"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Workplace Type</FormLabel>
+                  <FormDescription>
+                    Select the workplace arrangements you prefer (optional - if none selected, we'll search all workplace types)
+                  </FormDescription>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {[
+                      { value: "remote", label: "Remote" },
+                      { value: "hybrid", label: "Hybrid" },
+                      { value: "on-site", label: "On-site" }
+                    ].map((option) => (
+                      <div key={option.value} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`workplace-${option.value}`}
+                          checked={field.value?.includes(option.value as any)}
+                          onCheckedChange={(checked) => {
+                            const currentValues = field.value || [];
+                            if (checked) {
+                              field.onChange([...currentValues, option.value] as any);
+                            } else {
+                              field.onChange(
+                                currentValues.filter((value) => value !== option.value) as any
+                              );
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor={`workplace-${option.value}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          {option.label}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="jobExperienceLevel"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Experience Level</FormLabel>
+                  <FormDescription>
+                    Select the experience levels you're targeting (optional - if none selected, we'll search all experience levels)
+                  </FormDescription>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {[
+                      { value: "entry_level", label: "Entry Level" },
+                      { value: "associate", label: "Associate" },
+                      { value: "mid_senior_level", label: "Mid-Senior Level" },
+                      { value: "director", label: "Director" },
+                      { value: "executive", label: "Executive" }
+                    ].map((option) => (
+                      <div key={option.value} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`experience-${option.value}`}
+                          checked={field.value?.includes(option.value as any)}
+                          onCheckedChange={(checked) => {
+                            const currentValues = field.value || [];
+                            if (checked) {
+                              field.onChange([...currentValues, option.value] as any);
+                            } else {
+                              field.onChange(
+                                currentValues.filter((value) => value !== option.value) as any
+                              );
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor={`experience-${option.value}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          {option.label}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
@@ -185,7 +308,7 @@ export function JobPreferencesForm() {
                     />
                   </FormControl>
                   <FormDescription>
-                    Type a location (city, state format) and press Enter to add it
+                    Type a location (city, state format) and press Enter to add it (optional - if none selected, we'll search all locations)
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

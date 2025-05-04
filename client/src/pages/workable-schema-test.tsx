@@ -33,14 +33,31 @@ export default function WorkableSchemaTest() {
       setResults(data);
 
       if (data.success) {
+        // Success case
+        const fieldCount = data.formSchema?.fields?.length || 0;
         toast({
           title: "Success",
-          description: "Job form introspection completed successfully",
+          description: `Job form introspection completed successfully (${fieldCount} fields found)`,
         });
       } else {
+        // Error case - handle both formats
+        let errorMessage = "Failed to introspect job form";
+        
+        // New error format: { success: false, error: { message, status, details } }
+        if (data.error && typeof data.error === 'object') {
+          errorMessage = data.error.message || errorMessage;
+          if (data.error.details) {
+            errorMessage += `: ${data.error.details}`;
+          }
+        } 
+        // Legacy error format: { success: false, error: "string" }
+        else if (data.error) {
+          errorMessage = data.error;
+        }
+        
         toast({
           title: "Error",
-          description: data.error || "Failed to introspect job form",
+          description: errorMessage,
           variant: "destructive",
         });
       }
@@ -178,7 +195,52 @@ export default function WorkableSchemaTest() {
 
       {results && (
         <Card className="p-6 mt-6 bg-background border-border">
-          <h2 className="text-xl font-bold mb-4">Results</h2>
+          <h2 className="text-xl font-bold mb-4">
+            Results
+            {results.success && (
+              <span className="text-sm text-green-500 ml-2 font-normal">
+                {results.formSchema?.fields?.length || results.fields?.length || 0} fields detected
+              </span>
+            )}
+          </h2>
+          
+          {/* Display a formatted table for form fields when available */}
+          {results.success && (results.formSchema?.fields || results.fields) && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-2">Form Fields</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse mb-4">
+                  <thead>
+                    <tr className="bg-muted">
+                      <th className="border border-border p-2 text-left">Field Name</th>
+                      <th className="border border-border p-2 text-left">Type</th>
+                      <th className="border border-border p-2 text-left">Required</th>
+                      <th className="border border-border p-2 text-left">Label</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(results.formSchema?.fields || results.fields)?.map((field: any, index: number) => (
+                      <tr key={index} className={index % 2 === 0 ? "bg-background" : "bg-muted/30"}>
+                        <td className="border border-border p-2">{field.name || field.id || '-'}</td>
+                        <td className="border border-border p-2">{field.type || '-'}</td>
+                        <td className="border border-border p-2">
+                          {field.required ? (
+                            <span className="text-red-500 font-medium">Yes</span>
+                          ) : (
+                            <span className="text-gray-500">No</span>
+                          )}
+                        </td>
+                        <td className="border border-border p-2">{field.label || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {/* Always show the raw JSON data for debugging */}
+          <h3 className="text-lg font-semibold mb-2">Raw Response</h3>
           <pre className="bg-muted p-4 rounded-md overflow-auto max-h-[500px] text-sm">
             {JSON.stringify(results, null, 2)}
           </pre>

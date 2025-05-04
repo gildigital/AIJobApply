@@ -819,7 +819,9 @@ export class WorkableScraper {
    * @param jobUrl The URL of the Workable job posting
    * @returns The field schema of the application form or null if introspection failed
    */
-  async introspectJobForm(jobUrl: string): Promise<any> {
+  async introspectJobForm(jobUrl: string, retryCount = 0): Promise<any> {
+    const MAX_RETRIES = 2; // Maximum number of retry attempts
+    
     try {
       // Check if we have a worker URL configured
       const workerUrl = process.env.PLAYWRIGHT_WORKER_URL;
@@ -828,7 +830,7 @@ export class WorkableScraper {
         return null;
       }
 
-      console.log(`Introspecting Workable job form for URL: ${jobUrl}`);
+      console.log(`Introspecting Workable job form for URL: ${jobUrl}${retryCount > 0 ? ` (Retry ${retryCount})` : ''}`);
 
       // Create the /introspect request payload
       const payload = {
@@ -871,6 +873,13 @@ export class WorkableScraper {
             status: response.status,
             error: errorText.substring(0, 1000),
           });
+          
+          // If we haven't exceeded retry attempts, wait and try again
+          if (retryCount < MAX_RETRIES) {
+            console.log(`Retrying introspection for ${jobUrl} in 3 seconds...`);
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before retry
+            return this.introspectJobForm(jobUrl, retryCount + 1);
+          }
         } catch (responseError) {
           console.error("Failed to extract error details:", responseError);
         }

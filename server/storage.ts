@@ -5,7 +5,8 @@ import {
   jobTracker, type JobTracker, type InsertJobTracker,
   jobQueue, type JobQueue, type InsertJobQueue,
   userProfiles, type UserProfile, type InsertUserProfile,
-  portfolios, type Portfolio, type InsertPortfolio
+  portfolios, type Portfolio, type InsertPortfolio,
+  autoApplyLogs
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, gte, lt, count, desc, asc, or } from "drizzle-orm";
@@ -62,6 +63,7 @@ export interface IStorage {
   enqueueJobs(jobs: InsertJobQueue[]): Promise<JobQueue[]>;
   getNextJobsFromQueue(limit: number): Promise<JobQueue[]>;
   getQueuedJobsForUser(userId: number): Promise<JobQueue[]>;
+  getQueuedJobsForJobId(jobId: number): Promise<JobQueue[]>;
   updateQueuedJob(id: number, data: Partial<JobQueue>): Promise<JobQueue | undefined>;
   dequeueJob(id: number): Promise<boolean>;
   
@@ -243,10 +245,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteJob(id: number): Promise<boolean> {
-    await db
-      .delete(jobTracker)
-      .where(eq(jobTracker.id, id));
-    return true;
+    try {
+      // First, check for and delete any related records in the job queue table
+      const queuedJobs = await this.getQueuedJobsForJobId(id);
+      
+      // Delete any related queue entries first
+      if (queuedJobs.length > 0) {
+        for (const queuedJob of queuedJobs) {
+          await this.dequeueJob(queuedJob.id);
+        }
+      }
+      
+      // Delete any related auto-apply logs
+      await db
+        .delete(autoApplyLogs)
+        .where(eq(autoApplyLogs.jobId, id));
+      
+      // Now delete the actual job record
+      await db
+        .delete(jobTracker)
+        .where(eq(jobTracker.id, id));
+      
+      return true;
+    } catch (error) {
+      console.error("Error in deleteJob:", error);
+      throw error;
+    }
   }
   
   async getJobsAppliedToday(userId: number, startDate: Date): Promise<number> {
@@ -310,6 +334,14 @@ export class DatabaseStorage implements IStorage {
           eq(jobQueue.status, 'standby')
         )
       ))
+      .orderBy(desc(jobQueue.priority), asc(jobQueue.createdAt));
+  }
+
+  async getQueuedJobsForJobId(jobId: number): Promise<JobQueue[]> {
+    return await db
+      .select()
+      .from(jobQueue)
+      .where(eq(jobQueue.jobId, jobId))
       .orderBy(desc(jobQueue.priority), asc(jobQueue.createdAt));
   }
 

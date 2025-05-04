@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Search, AlertCircle, RefreshCw, StopCircle } from "lucide-react";
+import { Loader2, Search, AlertCircle, RefreshCw, StopCircle, Home, Globe, Building } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
@@ -10,6 +10,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Label } from "@/components/ui/label";
 
 interface JobListing {
   jobTitle: string;
@@ -49,6 +51,9 @@ export default function FindJobsCard() {
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   
+  // Workplace preference state
+  const [workplacePreference, setWorkplacePreference] = useState<'remote' | 'hybrid' | 'any'>('any');
+  
   // Mutation to find jobs
   const findJobsMutation = useMutation<FindJobsResponse, Error, { continueToken?: string } | undefined>({
     mutationFn: async (options) => {
@@ -64,11 +69,23 @@ export default function FindJobsCard() {
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30-second hard timeout
       
       try {
+        // Determine workplace parameter based on preference
+        let remote: boolean | undefined = undefined;
+        if (workplacePreference === 'remote') {
+          remote = true;
+        } else if (workplacePreference === 'hybrid') {
+          remote = false;
+        }
+        // If 'any', we don't specify and let the server use defaults
+        
         const response = await apiRequest("POST", "/api/auto-apply/find-jobs", {
           continueToken: options?.continueToken,
           pageSize: 20, // Increased page size for more comprehensive results
-          maxInitialJobs: 50 // Increased from 15 to 50 for more comprehensive results
+          maxInitialJobs: 50, // Increased from 15 to 50 for more comprehensive results
+          workplace: workplacePreference !== 'any' ? workplacePreference : undefined,
+          remote: remote // Send explicit remote preference when set
         });
+        
         const data = await response.json();
         return data;
       } catch (error) {
@@ -378,11 +395,51 @@ export default function FindJobsCard() {
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <Search className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-sm text-muted-foreground">
-              Click the button below to search for jobs matching your profile preferences.
-            </p>
+          <div className="flex flex-col items-center justify-center py-6 text-center space-y-6">
+            <div>
+              <Search className="h-12 w-12 text-muted-foreground mb-4" />
+              <p className="text-sm text-muted-foreground">
+                Click the button below to search for jobs matching your profile preferences.
+              </p>
+            </div>
+            
+            {/* Search preferences controls */}
+            <div className="w-full max-w-sm mx-auto space-y-4">
+              {/* Workplace Type preference */}
+              <div>
+                <Label htmlFor="workplace-preference" className="block text-sm font-medium mb-2">
+                  Workplace Type
+                </Label>
+                <ToggleGroup 
+                  type="single" 
+                  value={workplacePreference}
+                  onValueChange={(value) => value && setWorkplacePreference(value as 'remote' | 'hybrid' | 'any')}
+                  className="justify-start w-full"
+                >
+                  <ToggleGroupItem value="remote" aria-label="Remote jobs only">
+                    <Home className="h-4 w-4 mr-1" />
+                    Remote
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="hybrid" aria-label="Hybrid jobs only">
+                    <Building className="h-4 w-4 mr-1" />
+                    Hybrid
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="any" aria-label="Any workplace type">
+                    <Globe className="h-4 w-4 mr-1" />
+                    Any
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {workplacePreference === 'remote' 
+                    ? 'Showing only remote positions' 
+                    : workplacePreference === 'hybrid' 
+                      ? 'Showing hybrid and on-site positions' 
+                      : 'Showing all workplace types'}
+                </p>
+              </div>
+              
+
+            </div>
           </div>
         )}
       </CardContent>

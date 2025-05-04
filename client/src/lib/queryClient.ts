@@ -10,7 +10,7 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined
+  data?: unknown | undefined,
 ): Promise<Response> {
   const res = await fetch(url, {
     method,
@@ -38,19 +38,7 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
-    const data = await res.json();
-
-    // Transform response for /api/auto-apply/status
-    if (queryKey[0] === "/api/auto-apply/status") {
-      return {
-        ...data,
-        appliedToday: Number(data.appliedToday),
-        totalLimit: Number(data.totalLimit),
-        remaining: Number(data.remaining),
-      };
-    }
-
-    return data;
+    return await res.json();
   };
 
 export const queryClient = new QueryClient({
