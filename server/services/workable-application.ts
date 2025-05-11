@@ -367,7 +367,12 @@ export async function submitWorkableApplication(
         // For this field, we need to get the first option's value for "Yes" rather than hardcoding "CA"
         if (field.options && field.options.length > 0) {
           // Find the "yes" or "authorized" option
-          const yesOption = field.options.find(opt => 
+          interface FieldOption {
+            label: string;
+            value: string;
+          }
+
+          const yesOption: FieldOption | undefined = (field.options as FieldOption[]).find((opt: FieldOption) => 
             (opt.label && (
               opt.label.toLowerCase().includes('yes') || 
               opt.label.toLowerCase().includes('authorized') ||
