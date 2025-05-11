@@ -71,7 +71,7 @@ export async function startAutoApply(userId: number): Promise<string> {
       return "Daily application limit reached";
     }
 
-    // Process asynchronously (in a real app, this would be a background worker)
+    // Process asynchronously (TODO: this must be a background worker)
     processAutoApply(userId, remainingApplications).catch(err => {
       console.error("Error in auto-apply process:", err);
     });
