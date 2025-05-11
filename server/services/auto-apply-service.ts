@@ -543,14 +543,10 @@ export async function submitApplication(user: any, job: JobListing): Promise<"su
     
     // For Workable jobs, validate the URL format
     if (job.source === 'workable') {
-      // Import and use the URL validator from Workable scraper
-      const { workableScraper } = await import('./workable-scraper');
-      
       if (!workableScraper.isValidWorkableApplicationUrl(job.applyUrl)) {
         console.log(`Invalid Workable application URL: ${job.applyUrl}`);
         return "skipped";
       }
-      
       console.log(`Valid Workable application URL confirmed: ${job.applyUrl}`);
     }
     
