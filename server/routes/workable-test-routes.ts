@@ -110,10 +110,10 @@ export function registerWorkableTestRoutes(app: Express) {
       const url = req.query.url as string || "https://jobs.workable.com/search?query=software+engineer";
       const debug = req.query.debug === 'true';
       
-      if (!process.env.PLAYWRIGHT_WORKER_URL) {
+      if (!process.env.VITE_PLAYWRIGHT_WORKER_URL) {
         return res.status(500).json({
           success: false,
-          error: "PLAYWRIGHT_WORKER_URL environment variable not set"
+          error: "VITE_PLAYWRIGHT_WORKER_URL environment variable not set"
         });
       }
       
@@ -121,14 +121,14 @@ export function registerWorkableTestRoutes(app: Express) {
       if (debug) {
         return res.json({
           success: true,
-          playwright_worker_url: process.env.PLAYWRIGHT_WORKER_URL,
+          playwright_worker_url: process.env.VITE_PLAYWRIGHT_WORKER_URL,
           message: "Debug mode - not making actual request"
         });
       }
       
       // Construct the request to send to the Playwright Worker
       // Make sure we have a proper URL with protocol
-      const workerUrl = process.env.PLAYWRIGHT_WORKER_URL || '';
+      const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL || '';
       const baseUrl = workerUrl.startsWith('http') ? workerUrl : `https://${workerUrl}`;
       // Try different potential endpoint paths
       const fullUrl = `${baseUrl}/api/screenshot`;
@@ -318,7 +318,7 @@ export function registerWorkableTestRoutes(app: Express) {
       console.log(`Processing Workable ${urlType} URL: ${jobUrl}`);
       
       // Check if Playwright worker URL is configured
-      if (!process.env.PLAYWRIGHT_WORKER_URL) {
+      if (!process.env.VITE_PLAYWRIGHT_WORKER_URL) {
         return res.status(500).json({
           success: false,
           error: "Playwright worker URL is not configured"
@@ -405,7 +405,7 @@ export function registerWorkableTestRoutes(app: Express) {
       };
       
       // Use Playwright worker to submit the application
-      const workerUrl = process.env.PLAYWRIGHT_WORKER_URL || '';
+      const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL || '';
       const baseUrl = workerUrl.startsWith('http') ? workerUrl : `https://${workerUrl}`;
       const submitUrl = `${baseUrl}/submit`;
       

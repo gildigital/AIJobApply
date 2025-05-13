@@ -28,11 +28,11 @@ export function registerEnvTestRoutes(app: Express) {
       res.json({
         success: true,
         env: envVars,
-        // Specifically verify the PLAYWRIGHT_WORKER_URL
+        // Specifically verify the VITE_PLAYWRIGHT_WORKER_URL
         playwright_worker: {
-          url: process.env.PLAYWRIGHT_WORKER_URL,
-          formatted: process.env.PLAYWRIGHT_WORKER_URL ? 
-            `https://${process.env.PLAYWRIGHT_WORKER_URL}`.replace(/^https:\/\/https:\/\//, 'https://') : 
+          url: process.env.VITE_PLAYWRIGHT_WORKER_URL,
+          formatted: process.env.VITE_PLAYWRIGHT_WORKER_URL ? 
+            `https://${process.env.VITE_PLAYWRIGHT_WORKER_URL}`.replace(/^https:\/\/https:\/\//, 'https://') : 
             null
         }
       });

@@ -171,7 +171,7 @@ export class ScrollBasedScraper {
           console.log(`Fetching job listings from: ${correctedUrl} (page ${currentPage}, attempt ${attempt + 1})`);
   
           const workerUrl =
-            process.env.PLAYWRIGHT_WORKER_URL || 'https://aijobapply-worker-production.up.railway.app';
+            process.env.VITE_PLAYWRIGHT_WORKER_URL || 'https://aijobapply-worker-production.up.railway.app';
           const completeWorkerUrl = workerUrl.startsWith('http')
             ? workerUrl
             : `https://${workerUrl}`;

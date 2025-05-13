@@ -14,7 +14,7 @@ export function registerPlaywrightTestRoutes(app: Express) {
       const url = req.query.url ? String(req.query.url) : "https://www.google.com";
       
       // Check if Playwright worker URL is configured
-      if (!process.env.PLAYWRIGHT_WORKER_URL) {
+      if (!process.env.VITE_PLAYWRIGHT_WORKER_URL) {
         return res.status(500).json({
           success: false,
           error: "Playwright worker URL is not configured"
@@ -22,7 +22,7 @@ export function registerPlaywrightTestRoutes(app: Express) {
       }
       
       // Use Playwright worker to get content
-      let playwrightUrl = process.env.PLAYWRIGHT_WORKER_URL || '';
+      let playwrightUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL || '';
       
       // Ensure the URL has a protocol
       if (!playwrightUrl.startsWith('http://') && !playwrightUrl.startsWith('https://')) {
@@ -90,7 +90,7 @@ export function registerPlaywrightTestRoutes(app: Express) {
       console.log(`Testing Playwright HTML retrieval with URL: ${url}`);
       
       // Check if Playwright worker URL is configured
-      if (!process.env.PLAYWRIGHT_WORKER_URL) {
+      if (!process.env.VITE_PLAYWRIGHT_WORKER_URL) {
         return res.status(500).json({
           success: false,
           error: "Playwright worker URL is not configured"
@@ -98,7 +98,7 @@ export function registerPlaywrightTestRoutes(app: Express) {
       }
       
       // Use Playwright worker to get HTML content
-      let playwrightUrl = process.env.PLAYWRIGHT_WORKER_URL || '';
+      let playwrightUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL || '';
       
       // Ensure the URL has a protocol
       if (!playwrightUrl.startsWith('http://') && !playwrightUrl.startsWith('https://')) {

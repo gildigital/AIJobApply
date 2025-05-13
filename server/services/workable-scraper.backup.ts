@@ -767,7 +767,7 @@ export class WorkableScraper {
   async introspectJobForm(jobUrl: string): Promise<any> {
     try {
       // Check if we have a worker URL configured
-      const workerUrl = process.env.PLAYWRIGHT_WORKER_URL;
+      const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
       if (!workerUrl) {
         console.error("No Playwright worker URL configured");
         return null;
@@ -941,7 +941,7 @@ export class WorkableScraper {
         }
       } else {
         // Use Playwright worker to scroll and extract job links
-        const workerUrl = process.env.PLAYWRIGHT_WORKER_URL;
+        const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
         if (!workerUrl) {
           console.error("No Playwright worker URL configured");
           return [];

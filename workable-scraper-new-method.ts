@@ -9,7 +9,7 @@
       console.log(`Fetching job listings from: ${searchUrl}`);
 
       // Use Playwright worker to scroll and extract job links
-      const workerUrl = process.env.PLAYWRIGHT_WORKER_URL;
+      const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
       if (!workerUrl) {
         console.error('No Playwright worker URL configured');
         return [];

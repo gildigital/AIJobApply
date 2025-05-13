@@ -91,7 +91,7 @@ export async function submitWorkableApplication(
     );
 
     // Check if we have a worker URL configured
-    const workerUrl = process.env.PLAYWRIGHT_WORKER_URL;
+    const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
     if (!workerUrl) {
       console.error("No Playwright worker URL configured");
       return "error";
