@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, API_BASE_URL } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -16,7 +16,13 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const addJobSchema = z.object({
   jobTitle: z.string().min(1, "Job title is required"),
@@ -30,7 +36,7 @@ type AddJobFormValues = z.infer<typeof addJobSchema>;
 
 export default function AddJobCard() {
   const { toast } = useToast();
-  
+
   const form = useForm<AddJobFormValues>({
     resolver: zodResolver(addJobSchema),
     defaultValues: {
@@ -64,7 +70,8 @@ export default function AddJobCard() {
     onError: (error) => {
       toast({
         title: "Failed to add job",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
     },
@@ -115,7 +122,11 @@ export default function AddJobCard() {
                 <FormItem>
                   <FormLabel>Job Link</FormLabel>
                   <FormControl>
-                    <Input type="url" placeholder="https://example.com/job" {...field} />
+                    <Input
+                      type="url"
+                      placeholder="https://example.com/job"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -127,7 +138,10 @@ export default function AddJobCard() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Status</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a status" />
@@ -152,15 +166,18 @@ export default function AddJobCard() {
                 <FormItem>
                   <FormLabel>Notes (Optional)</FormLabel>
                   <FormControl>
-                    <Input placeholder="Any additional notes about this job" {...field} />
+                    <Input
+                      placeholder="Any additional notes about this job"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button 
-              type="submit" 
-              className="w-full" 
+            <Button
+              type="submit"
+              className="w-full"
               disabled={addJobMutation.isPending}
             >
               {addJobMutation.isPending ? "Adding Job..." : "Add Job"}

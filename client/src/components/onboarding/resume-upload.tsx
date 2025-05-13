@@ -1,9 +1,15 @@
-import { useState } from "react";
-import { CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { useState, ChangeEvent } from "react";
+import {
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload, FileType, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import { API_BASE_URL } from "@/lib/queryClient";
 
 interface ResumeUploadProps {
   onComplete: () => void;
@@ -11,38 +17,49 @@ interface ResumeUploadProps {
   isLoading: boolean;
 }
 
-export default function ResumeUpload({ onComplete, onBack, isLoading }: ResumeUploadProps) {
+export default function ResumeUpload({
+  onComplete,
+  onBack,
+  isLoading,
+}: ResumeUploadProps) {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    
+
     if (!selectedFile) {
+      setFile(null); // Clear previous file if any
       return;
     }
-    
-    if (selectedFile.type !== 'application/pdf') {
+
+    if (selectedFile.type !== "application/pdf") {
       toast({
         title: "Invalid file type",
         description: "Please upload a PDF file.",
         variant: "destructive",
       });
+      e.target.value = ""; // Clear the file input
+      setFile(null);
       return;
     }
-    
+
     if (selectedFile.size > 10 * 1024 * 1024) {
+      // 10MB
       toast({
         title: "File too large",
         description: "Please upload a file smaller than 10MB.",
         variant: "destructive",
       });
+      e.target.value = ""; // Clear the file input
+      setFile(null);
       return;
     }
-    
+
     setFile(selectedFile);
+    setUploadSuccess(false); // Reset success status if a new file is selected
   };
 
   const handleUploadResume = async () => {
@@ -54,23 +71,35 @@ export default function ResumeUpload({ onComplete, onBack, isLoading }: ResumeUp
       });
       return;
     }
-    
+
     setIsUploading(true);
-    
+
     try {
       const formData = new FormData();
-      formData.append('resume', file);
-      
-      const response = await fetch('/api/resume', {
-        method: 'POST',
+      formData.append("resume", file);
+
+      const url = `${API_BASE_URL}/api/resume`;
+      console.log(`[ResumeUpload] Uploading resume to: ${url}`);
+
+      const response = await fetch(url, {
+        method: "POST",
         body: formData,
-        credentials: 'include',
+        credentials: "include",
       });
-      
+
       if (!response.ok) {
-        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+        // Try to get error message from backend
+        const errorData = await response
+          .json()
+          .catch(() => ({
+            message: `Upload failed: ${response.status} ${response.statusText}`,
+          }));
+        throw new Error(
+          errorData.message ||
+            `Upload failed: ${response.status} ${response.statusText}`
+        );
       }
-      
+
       setUploadSuccess(true);
       toast({
         title: "Resume uploaded",
@@ -79,7 +108,8 @@ export default function ResumeUpload({ onComplete, onBack, isLoading }: ResumeUp
     } catch (error) {
       toast({
         title: "Upload failed",
-        description: error instanceof Error ? error.message : "Unknown error occurred",
+        description:
+          error instanceof Error ? error.message : "Unknown error occurred",
         variant: "destructive",
       });
     } finally {
@@ -90,6 +120,13 @@ export default function ResumeUpload({ onComplete, onBack, isLoading }: ResumeUp
   const handleReplace = () => {
     setFile(null);
     setUploadSuccess(false);
+    // Consider also clearing the file input if you have a ref to it
+    const fileInput = document.getElementById(
+      "resume-upload"
+    ) as HTMLInputElement | null;
+    if (fileInput) {
+      fileInput.value = "";
+    }
   };
 
   return (
@@ -97,7 +134,8 @@ export default function ResumeUpload({ onComplete, onBack, isLoading }: ResumeUp
       <CardHeader>
         <CardTitle>Upload Your Resume</CardTitle>
         <CardDescription>
-          Upload your resume to complete your profile. You can update it anytime from your dashboard.
+          Upload your resume to complete your profile. You can update it anytime
+          from your dashboard.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -106,23 +144,24 @@ export default function ResumeUpload({ onComplete, onBack, isLoading }: ResumeUp
             <div className="space-y-1 text-center">
               <Upload className="mx-auto h-12 w-12 text-gray-400" />
               <div className="flex text-sm text-gray-600 justify-center">
-                <label htmlFor="resume-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-primary-600 hover:text-primary-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500">
+                <label
+                  htmlFor="resume-upload"
+                  className="relative cursor-pointer bg-white rounded-md font-medium text-primary-600 hover:text-primary-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500"
+                >
                   <span>Upload a file</span>
-                  <input 
-                    id="resume-upload" 
-                    name="resume" 
-                    type="file" 
-                    className="sr-only" 
+                  <input
+                    id="resume-upload"
+                    name="resume"
+                    type="file"
+                    className="sr-only"
                     accept=".pdf"
                     onChange={handleFileChange}
-                    disabled={isUploading}
+                    disabled={isUploading || isLoading} // Also consider general isLoading prop
                   />
                 </label>
                 <p className="pl-1">or drag and drop</p>
               </div>
-              <p className="text-xs text-gray-500">
-                PDF up to 10MB
-              </p>
+              <p className="text-xs text-gray-500">PDF up to 10MB</p>
             </div>
           </div>
         ) : (
@@ -132,22 +171,29 @@ export default function ResumeUpload({ onComplete, onBack, isLoading }: ResumeUp
                 <FileType className="h-8 w-8 text-primary-500 mr-3" />
                 <div>
                   <p className="font-medium">{file.name}</p>
-                  <p className="text-sm text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                  <p className="text-sm text-gray-500">
+                    {(file.size / 1024 / 1024).toFixed(2)} MB
+                  </p>
                 </div>
               </div>
-              <Button variant="outline" size="sm" onClick={handleReplace}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReplace}
+                disabled={isUploading || isLoading}
+              >
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Replace
               </Button>
             </div>
           </div>
         )}
-        
+
         {file && !uploadSuccess && (
           <div className="mt-4 flex justify-center">
-            <Button 
-              onClick={handleUploadResume} 
-              disabled={isUploading}
+            <Button
+              onClick={handleUploadResume}
+              disabled={isUploading || isLoading}
               className="w-full sm:w-auto"
             >
               {isUploading ? "Uploading..." : "Upload Resume"}
@@ -157,14 +203,20 @@ export default function ResumeUpload({ onComplete, onBack, isLoading }: ResumeUp
       </CardContent>
 
       <CardFooter className="flex justify-between">
-        <Button type="button" variant="outline" onClick={onBack} disabled={isLoading || isUploading}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onBack}
+          disabled={isLoading || isUploading}
+        >
           Back
         </Button>
-        <Button 
-          onClick={onComplete} 
-          disabled={isLoading || isUploading || (!file || !uploadSuccess)}
+        <Button
+          onClick={onComplete}
+          disabled={isLoading || isUploading || !file || !uploadSuccess} // Only allow complete if file uploaded
         >
-          {isLoading ? "Completing..." : "Complete Profile"}
+          {isLoading ? "Saving..." : "Next Step"}
+          {/* Changed "Complete Profile" to "Next Step" as profile might not be complete yet */}
         </Button>
       </CardFooter>
     </>

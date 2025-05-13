@@ -36,8 +36,8 @@ export function setupAuth(app: Express) {
     console.log("Generated random SESSION_SECRET for development");
   }
 
-  const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET,
+  const sessionSettings = {
+    secret: process.env.SESSION_SECRET!, // Add '!' if you're sure it's set
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore,
@@ -45,11 +45,15 @@ export function setupAuth(app: Express) {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    }
+      sameSite: process.env.NODE_ENV === "production" ? "none" as const : "lax" as const, // Use 'none' for production cross-site : 'lax' for local dev if not HTTPS
+    },
   };
 
-  app.set("trust proxy", 1);
+  if (process.env.NODE_ENV === "production") {
+    app.set("trust proxy", 1); // The number of proxies to trust, 1 is common
+  }
   app.use(session(sessionSettings));
+
   app.use(passport.initialize());
   app.use(passport.session());
 
@@ -67,7 +71,7 @@ export function setupAuth(app: Express) {
       } catch (err) {
         return done(err);
       }
-    }),
+    })
   );
 
   passport.serializeUser((user: Express.User, done) => done(null, user.id));
@@ -89,7 +93,7 @@ export function setupAuth(app: Express) {
   app.post("/api/register", async (req, res, next) => {
     try {
       const userData = registerSchema.parse(req.body);
-      
+
       // Check if username already exists
       if (userData.username) {
         const existingUser = await storage.getUserByUsername(userData.username);
@@ -119,9 +123,9 @@ export function setupAuth(app: Express) {
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ 
-          message: "Validation error", 
-          errors: error.errors 
+        return res.status(400).json({
+          message: "Validation error",
+          errors: error.errors,
         });
       }
       next(error);
@@ -129,18 +133,23 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: Error | null, user: Express.User | false, info: any) => {
-      if (err) return next(err);
-      if (!user) {
-        return res.status(401).json({ message: info?.message || "Invalid credentials" });
-      }
-      req.login(user, (err) => {
+    passport.authenticate(
+      "local",
+      (err: Error | null, user: Express.User | false, info: any) => {
         if (err) return next(err);
-        // Don't send password back to client
-        const { password, ...safeUser } = user;
-        res.status(200).json(safeUser);
-      });
-    })(req, res, next);
+        if (!user) {
+          return res
+            .status(401)
+            .json({ message: info?.message || "Invalid credentials" });
+        }
+        req.login(user, (err) => {
+          if (err) return next(err);
+          // Don't send password back to client
+          const { password, ...safeUser } = user;
+          res.status(200).json(safeUser);
+        });
+      }
+    )(req, res, next);
   });
 
   app.post("/api/logout", (req, res, next) => {
@@ -151,7 +160,8 @@ export function setupAuth(app: Express) {
   });
 
   app.get("/api/user", (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
+    if (!req.isAuthenticated())
+      return res.status(401).json({ message: "Not authenticated" });
     // Don't send password back to client
     const { password, ...safeUser } = req.user;
     res.json(safeUser);
