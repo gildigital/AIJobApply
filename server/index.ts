@@ -14,13 +14,30 @@ import { registerDiagnosticsRoutes } from "./routes/diagnostics-routes.js";
 
 const app = express();
 
+const configuredOrigin = process.env.ALLOWED_ORIGIN;
+console.log(
+  `[CORS DEBUG] Value of process.env.ALLOWED_ORIGIN from Railway env: "${configuredOrigin}"`
+);
+
+const corsOriginToUse = configuredOrigin || "*";
+console.log(
+  `[CORS DEBUG] Effective origin value being used by cors middleware: "${corsOriginToUse}"`
+);
+
 // Enable CORS for Vercel frontend
 app.use(
   cors({
-    origin: process.env.ALLOWED_ORIGIN || "*",
+    origin: corsOriginToUse,
     credentials: true,
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS", // Explicitly list methods
+    allowedHeaders: "Content-Type,Authorization,X-Requested-With", // Common headers, add if your frontend sends others
+    preflightContinue: false, // Default is false, means CORS middleware handles OPTIONS and ends response
+    optionsSuccessStatus: 204, // Standard success status for OPTIONS response
   })
 );
+
+// Handle preflight OPTIONS requests explicitly for all routes
+app.options('*', cors());
 
 // Create a raw body parser for Stripe webhook requests
 const rawBodyParser = express.raw({ type: "application/json" });
