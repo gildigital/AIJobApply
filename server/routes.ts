@@ -4,7 +4,7 @@ import { storage } from "./storage.js";
 import { setupAuth } from "./auth.js";
 import multer from "multer";
 import { z } from "zod";
-import { insertApplicationAnswerSchema, insertJobTrackerSchema, requiredQuestionsSchema, demographicQuestionsSchema, subscriptionPlans, type User } from "./local-schema.js";
+import { insertApplicationAnswerSchema, insertJobTrackerSchema, requiredQuestionsSchema, demographicQuestionsSchema, subscriptionPlans, type User } from "@shared/schema.js";
 import { extractTextFromPDFBase64 } from "./utils/pdf-parser.js";
 import { generateUserSummary } from "./utils/user-summary-generator.js";
 import Stripe from "stripe";

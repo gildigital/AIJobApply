@@ -7,7 +7,7 @@ import {
   userProfiles, type UserProfile, type InsertUserProfile,
   portfolios, type Portfolio, type InsertPortfolio,
   autoApplyLogs
-} from "./local-schema.js";
+} from "@shared/schema.js";
 import { db } from "./db.js";
 import { eq, and, gte, lt, count, desc, asc, or } from "drizzle-orm";
 import session from "express-session";
