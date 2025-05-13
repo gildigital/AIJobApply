@@ -30,7 +30,7 @@ import type {
   User as BaseUser,
   UserProfile as BaseUserProfile,
   Resume,
-} from "@shared/schema";
+} from "@shared/schema.js";
 
 // Extended interfaces to handle possible missing properties in schema
 interface User extends BaseUser {

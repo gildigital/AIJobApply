@@ -7,7 +7,7 @@ import { db } from "../db.js";
 import { matchResumeToJob, MatchResult } from "../utils/ai-service.js";
 import { JobListing as ScraperJobListing } from "./job-scraper.js";
 import { JobListing as AutoApplyJobListing } from "./auto-apply-service.js";
-import { jobTracker, InsertJobTracker } from "@shared/schema";
+import { jobTracker, InsertJobTracker } from "@shared/schema.js";
 import { eq, and } from "drizzle-orm";
 import { extractTextFromPDF } from "../utils/pdf-parser.js";
 

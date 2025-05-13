@@ -1,5 +1,5 @@
 import { db } from "../db.js";
-import { jobTracker, autoApplyLogs, users, InsertJobTracker, InsertAutoApplyLog } from "@shared/schema";
+import { jobTracker, autoApplyLogs, users, InsertJobTracker, InsertAutoApplyLog } from "@shared/schema.js";
 import { eq, and, gte, sql, or } from "drizzle-orm";
 import { storage } from "../storage.js";
 
@@ -905,7 +905,7 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
     .limit(10);
   
   // Get the subscription plans
-  const { subscriptionPlans } = await import("@shared/schema");
+  const { subscriptionPlans } = await import("@shared/schema.js");
   const userPlan = subscriptionPlans.find(plan => plan.id === (user?.subscriptionPlan || "FREE")) || subscriptionPlans[0];
   
   let currentStatus = latestLog?.status || "Not Started";

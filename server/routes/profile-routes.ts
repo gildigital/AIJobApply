@@ -1,6 +1,6 @@
 import { Express, Request, Response } from "express";
 import { storage } from "../storage.js";
-import { insertUserProfileSchema, contactInfoSchema, jobPreferencesSchema, onlinePresenceSchema } from "@shared/schema";
+import { insertUserProfileSchema, contactInfoSchema, jobPreferencesSchema, onlinePresenceSchema } from "@shared/schema.js";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";

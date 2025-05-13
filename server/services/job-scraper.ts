@@ -5,7 +5,7 @@
  */
 
 import { storage } from "../storage.js";
-import { User, Resume } from "@shared/schema";
+import { User, Resume } from "@shared/schema.js";
 
 // Define a more comprehensive job listing type specific to our scraper
 export interface JobListing {

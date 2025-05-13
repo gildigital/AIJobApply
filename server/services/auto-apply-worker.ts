@@ -13,7 +13,7 @@ import {
   JobListing,
   scoreJobFit,
 } from "./auto-apply-service.js";
-import { JobQueue, JobTracker, User, jobQueue } from "@shared/schema";
+import { JobQueue, JobTracker, User, jobQueue } from "@shared/schema.js";
 import { db } from "../db.js";
 import { eq } from "drizzle-orm";
 

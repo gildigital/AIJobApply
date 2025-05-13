@@ -1,5 +1,5 @@
 import { storage } from "../storage.js";
-import { SubscriptionPlan, subscriptionPlans } from "@shared/schema";
+import { SubscriptionPlan, subscriptionPlans } from "@shared/schema.js";
 
 export interface SubscriptionAccessResult {
   allowed: boolean;

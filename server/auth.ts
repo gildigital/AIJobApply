@@ -5,7 +5,7 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage.js";
-import { User as SelectUser, insertUserSchema } from "./local-schema.js";
+import { User as SelectUser, insertUserSchema } from "@shared/schema.js";
 import * as z from "zod";
 
 declare global {

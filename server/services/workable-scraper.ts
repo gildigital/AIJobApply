@@ -1,4 +1,4 @@
-import { UserProfile, JobPreferences } from "@shared/schema";
+import { UserProfile, JobPreferences } from "@shared/schema.js";
 import { storage } from "../storage.js";
 import crypto from "crypto";
 import Bottleneck from "bottleneck";
