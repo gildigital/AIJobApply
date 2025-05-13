@@ -1,9 +1,18 @@
+// server/index.ts
 import "dotenv/config";
-import express, { type Request, Response, NextFunction } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import cors from "cors";
+import { createServer, type Server as HttpServer } from "http";
+
+// --- Local Module Imports ---
 import { registerRoutes } from "./routes.js";
-// import { setupVite, serveStatic, log } from "./vite.js";
-import { log } from "./vite.js";
+
+// Test route imports
 import { registerApiTestRoute } from "./routes/api-test-route.js";
 import { registerPlaywrightTestRoutes } from "./routes/playwright-test-routes.js";
 import { registerEnvTestRoutes } from "./routes/env-test-routes.js";
@@ -12,84 +21,132 @@ import { registerWorkableDirectFetch } from "./routes/workable-direct-fetch.js";
 import { registerWorkableTestRoutes } from "./routes/workable-test-routes.js";
 import { registerDiagnosticsRoutes } from "./routes/diagnostics-routes.js";
 
-const app = express();
+const log = console.log; // Use standard console.log directly
+const app: Express = express();
 
+// --- CORS Configuration & Handling ---
 const configuredOrigin = process.env.ALLOWED_ORIGIN;
-console.log(
+log(
   `[CORS DEBUG] Value of process.env.ALLOWED_ORIGIN from Railway env: "${configuredOrigin}"`
 );
 
-const corsOriginToUse = configuredOrigin || "*";
-console.log(
-  `[CORS DEBUG] Effective origin value being used by cors middleware: "${corsOriginToUse}"`
+const corsOriginToUse = configuredOrigin || "*"; // This should resolve to your Vercel URL
+log(
+  `[CORS DEBUG] Effective origin value being used for CORS: "${corsOriginToUse}"`
 );
 
-// Enable CORS for Vercel frontend
-app.use(
-  cors({
-    origin: corsOriginToUse,
-    credentials: true,
-    methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS", // Explicitly list methods
-    allowedHeaders: "Content-Type,Authorization,X-Requested-With", // Common headers, add if your frontend sends others
-    preflightContinue: false, // Default is false, means CORS middleware handles OPTIONS and ends response
-    optionsSuccessStatus: 204, // Standard success status for OPTIONS response
-  })
-);
+const corsOptionsForActualRequests = {
+  origin: corsOriginToUse,
+  credentials: true,
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE", // OPTIONS handled by app.options
+  allowedHeaders: "Content-Type,Authorization,X-Requested-With", // Add any other headers your client sends
+};
 
-// Handle preflight OPTIONS requests explicitly for all routes
-app.options('*', cors());
+// Explicitly handle ALL preflight OPTIONS requests MANUALLY.
+// This MUST come before any other routes or general middleware that might intercept OPTIONS.
+app.options("*", (req: Request, res: Response) => {
+  log(
+    `[MANUAL OPTIONS HANDLER *] Path: ${req.path}, Request Origin: ${req.headers.origin}`
+  );
 
-// Create a raw body parser for Stripe webhook requests
-const rawBodyParser = express.raw({ type: "application/json" });
-
-// Special handling for the webhook route to get the raw body
-app.use("/api/webhook", rawBodyParser);
-
-// Standard body parser for all other routes
-app.use((req, res, next) => {
-  if (req.originalUrl === "/api/webhook") {
-    next();
+  // Check if the request origin is the one we want to allow for credentialed requests
+  if (req.headers.origin === corsOriginToUse) {
+    res.setHeader("Access-Control-Allow-Origin", corsOriginToUse);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      "GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS"
+    );
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, X-Requested-With"
+    ); // Match client headers
+    res.setHeader("Access-Control-Max-Age", "86400"); // Optional: Cache preflight result for 1 day
+    log(
+      "[MANUAL OPTIONS HANDLER *] Origin matched. Sending 204 with manual CORS headers."
+    );
+    res.sendStatus(204); // Send 204 No Content and end response
   } else {
-    express.json()(req, res, next);
+    // If origin doesn't match, or it's an OPTIONS request not from an allowed origin,
+    // send a simple 204 without permissive CORS headers, or a 403.
+    // Sending 204 is often sufficient for OPTIONS to just "pass through" without erroring,
+    // but the browser will still block the subsequent actual request if its origin isn't allowed.
+    log(
+      `[MANUAL OPTIONS HANDLER *] Origin mismatch or no origin. Req Origin: ${req.headers.origin}. Sending 204.`
+    );
+    res.sendStatus(204);
   }
 });
 
+// Apply CORS middleware for actual requests (GET, POST, etc.) AFTER preflight is handled
+app.use(cors(corsOptionsForActualRequests));
+
+// --- Body Parsers (AFTER CORS, especially after manual OPTIONS handler) ---
+const rawBodyParser = express.raw({ type: "application/json" });
+app.use("/api/webhook", rawBodyParser);
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.originalUrl === "/api/webhook") {
+    return next();
+  }
+  express.json()(req, res, next);
+});
 app.use(express.urlencoded({ extended: false }));
 
-app.use((req, res, next) => {
+// --- Request Logger Middleware ---
+app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
   const path = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+  // Only patch res.json if it's not an OPTIONS request already handled
+  if (req.method !== "OPTIONS") {
+    const originalResJson = res.json;
+    res.json = function (this: Response, bodyJson: any) {
+      // Correctly typed 'this'
+      capturedJsonResponse = bodyJson;
+      return originalResJson.apply(this, arguments as any); // Use arguments
+    };
+  }
 
   res.on("finish", () => {
+    // Don't log for OPTIONS requests handled by our manual handler, as they won't have a typical "finish" flow
+    if (
+      req.method === "OPTIONS" &&
+      res.statusCode === 204 &&
+      req.path === (req.route?.path || req.path)
+    ) {
+      // Already logged by MANUAL OPTIONS HANDLER if needed
+      return;
+    }
+
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        try {
+          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        } catch (e) {
+          logLine += ` :: [Unserializable JSON response]`;
+        }
       }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
+      if (logLine.length > 1000) {
+        // Increased limit slightly for more context
+        logLine = logLine.slice(0, 999) + "…";
       }
-
       log(logLine);
     }
   });
-
   next();
 });
 
+// --- Main Application Logic ---
 (async () => {
-  const server = await registerRoutes(app);
+  // --- Route Registrations ---
+  // 'registerRoutes' should ideally just configure 'app' and return void or 'app'.
+  // We'll create the http.Server instance ourselves for clarity.
+  await registerRoutes(app); // Assuming this configures app with main routes like auth
 
-  // Register our special API test routes that should bypass Vite's catch-all
   registerApiTestRoute(app);
   registerPlaywrightTestRoutes(app);
   registerEnvTestRoutes(app);
@@ -97,33 +154,72 @@ app.use((req, res, next) => {
   registerWorkableDirectFetch(app);
   registerWorkableTestRoutes(app);
 
-  // Register diagnostics routes for development
   if (process.env.NODE_ENV === "development") {
     registerDiagnosticsRoutes(app);
   }
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
+  // --- Final Catch-All 404 Handler (AFTER all other routes) ---
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    log(`[404 HANDLER] Path not found: ${req.method} ${req.path}`);
+    if (!res.headersSent) {
+      // For 404s, clients might not expect full CORS headers unless they need to read the body.
+      // But if an OPTIONS request somehow got here, it would be blocked by browser anyway.
+      // This is mainly for GET/POST etc. that don't match any route.
+      res
+        .status(404)
+        .json({ message: `Resource Not Found: ${req.method} ${req.path}` });
+    } else {
+      next();
+    }
   });
 
-  // // importantly only setup vite in development and after
-  // // setting up all the other routes so the catch-all route
-  // // doesn't interfere with the other routes
-  // if (app.get("env") === "development") {
-  //   await setupVite(app, server);
-  // } else {
-  //   serveStatic(app);
-  // }
+  // --- Global Error Handling Middleware (VERY LAST app.use) ---
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+    log(
+      `[ERROR HANDLER] Path: ${req.path}, Error Name: ${err.name}, Message: ${err.message}`
+    );
+    if (err.stack) {
+      log(`[ERROR HANDLER] Stack: ${err.stack}`);
+    }
 
-  // Use environment port or default to 5000
-  // Railway will set PORT for us automatically
+    if (res.headersSent) {
+      return next(err); // Delegate to default Express error handler if response already started
+    }
+
+    let status = err.status || err.statusCode || 500;
+    let message = err.message || "Internal Server Error";
+    let errors;
+
+    // Check for ZodError structure
+    if (err.issues && Array.isArray(err.issues)) {
+      // Common ZodError structure
+      message = "Validation error";
+      errors = err.issues.map((e: any) => ({
+        path: e.path,
+        message: e.message,
+      }));
+      status = 400;
+    } else if (err.errors && typeof err.flatten === "function") {
+      // Another ZodError check
+      message = "Validation error";
+      errors = err.flatten().fieldErrors;
+      status = 400;
+    }
+
+    // Set CORS headers for error responses too, so frontend can read the error body
+    if (req.headers.origin === corsOriginToUse) {
+      res.setHeader("Access-Control-Allow-Origin", corsOriginToUse);
+      res.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+
+    res.status(status).json({ message, errors });
+  });
+
+  // --- Start Server ---
+  const httpServer = createServer(app); // Create an http.Server instance from the Express app
   const port = Number(process.env.PORT || 5000);
-  // Listen on all interfaces (0.0.0.0) which is important for containers
-  server.listen(port, "0.0.0.0", () => {
-    log(`🚀 Server listening on port ${port}`);
+
+  httpServer.listen(port, "0.0.0.0", () => {
+    log(`🚀 HTTP Server listening on port ${port}`);
   });
 })();

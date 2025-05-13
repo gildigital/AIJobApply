@@ -46,7 +46,7 @@ export async function startAutoApply(userId: number): Promise<string> {
     });
 
     // Check subscription and daily limits
-    const { checkSubscriptionAccess } = await import("../utils/subscription-utils");
+    const { checkSubscriptionAccess } = await import("../utils/subscription-utils.js");
     const result = await checkSubscriptionAccess(userId);
     
     if (!result.allowed) {
@@ -59,7 +59,7 @@ export async function startAutoApply(userId: number): Promise<string> {
     }
 
     // Get remaining applications allowed today
-    const { getRemainingApplications } = await import("../utils/subscription-utils");
+    const { getRemainingApplications } = await import("../utils/subscription-utils.js");
     const remainingApplications = await getRemainingApplications(userId);
     
     if (remainingApplications <= 0) {
@@ -572,7 +572,7 @@ export async function submitApplication(user: any, job: JobListing): Promise<"su
     // For Workable jobs, use the schema-driven approach with introspection
     if (job.source === 'workable') {
       console.log("Using schema-driven approach for Workable job application");
-      const { submitWorkableApplication } = await import('./workable-application');
+      const { submitWorkableApplication } = await import('./workable-application.js');
       return await submitWorkableApplication(user, resume, profile, job, matchScore);
     }
     
@@ -793,7 +793,7 @@ export async function addJobToTracker(
   if (matchScore === undefined) {
     try {
       // Try to get AI matching data
-      const jobMatchingService = await import("./job-matching-service");
+      const jobMatchingService = await import("./job-matching-service.js");
       // Create a job object compatible with the job-matching-service
       const genericJob = {
         jobTitle: job.jobTitle,

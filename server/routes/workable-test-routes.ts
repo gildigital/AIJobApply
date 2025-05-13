@@ -299,7 +299,7 @@ export function registerWorkableTestRoutes(app: Express) {
       }
       
       // Validate that this is a Workable job URL (we now support both the old and new formats)
-      const { workableScraper } = await import("../services/workable-scraper");
+      const { workableScraper } = await import("../services/workable-scraper.js");
       
       // Check for both direct application URLs and job listing URLs
       const isDirectAppUrl = workableScraper.isValidWorkableApplicationUrl(jobUrl);

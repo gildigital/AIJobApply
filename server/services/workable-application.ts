@@ -37,15 +37,32 @@ interface User extends BaseUser {
   firstName?: string;
   lastName?: string;
   phone?: string;
+  email?: string;
+  name?: string;
+  resumeText?: string;
 }
 
 // Extended Resume interface to include content type
 interface ResumeWithContentType extends Resume {
   contentType?: string;
+  fileData?: string;
+  filename?: string;
 }
 
 // Extended UserProfile to handle additional properties
 interface UserProfile extends BaseUserProfile {
+  fullName?: string;
+  phoneNumber?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  country?: string;
+  linkedinProfile?: string;
+  personalWebsite?: string;
+  githubProfile?: string;
+  portfolioLink?: string;
+  email?: string;
   jobTitle?: string;
   skills?: string[];
   education?: Array<{
