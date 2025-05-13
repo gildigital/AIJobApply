@@ -1,5 +1,7 @@
 import { Express, Request, Response } from "express";
+// @ts-ignore - JS migration file
 import { runMigration as runJobPreferencesMigration } from '../migrations/add-job-preferences-columns.js';
+// @ts-ignore - JS migration file
 import { runMigration as runJobQueueStandbyMigration } from '../migrations/add-standby-status-to-job-queue.js';
 
 /**

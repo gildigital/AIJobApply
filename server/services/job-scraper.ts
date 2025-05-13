@@ -4,7 +4,7 @@
  * Phase 1: Adzuna API Integration
  */
 
-import { storage } from "../storage";
+import { storage } from "../storage.js";
 import { User, Resume } from "@shared/schema";
 
 // Define a more comprehensive job listing type specific to our scraper

@@ -1,4 +1,4 @@
-import { 
+import {
   users, type User, type InsertUser,
   applicationAnswers, type ApplicationAnswer, type InsertApplicationAnswer,
   resumes, type Resume, type InsertResume,
@@ -7,12 +7,12 @@ import {
   userProfiles, type UserProfile, type InsertUserProfile,
   portfolios, type Portfolio, type InsertPortfolio,
   autoApplyLogs
-} from "@shared/schema";
-import { db } from "./db";
+} from "./local-schema.js";
+import { db } from "./db.js";
 import { eq, and, gte, lt, count, desc, asc, or } from "drizzle-orm";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
-import { pool } from "./db";
+import { pool } from "./db.js";
 
 const PostgresSessionStore = connectPgSimple(session);
 
@@ -109,7 +109,10 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
-      .values({ ...insertUser, onboardingCompleted: false })
+      .values({
+        ...insertUser,
+        onboardingCompleted: false
+      } as any)
       .returning();
     return user;
   }
@@ -134,7 +137,7 @@ export class DatabaseStorage implements IStorage {
   async createApplicationAnswer(answer: InsertApplicationAnswer): Promise<ApplicationAnswer> {
     const [newAnswer] = await db
       .insert(applicationAnswers)
-      .values(answer)
+      .values(answer as any)
       .returning();
     return newAnswer;
   }
@@ -169,14 +172,14 @@ export class DatabaseStorage implements IStorage {
     await db
       .delete(resumes)
       .where(eq(resumes.userId, resume.userId));
-      
+
     // Then create the new one
     const [newResume] = await db
       .insert(resumes)
       .values({
         ...resume,
         uploadedAt: new Date()
-      })
+      } as any)
       .returning();
     return newResume;
   }
@@ -214,7 +217,7 @@ export class DatabaseStorage implements IStorage {
         ...job,
         createdAt: now,
         updatedAt: now
-      })
+      } as any)
       .returning();
     return newJob;
   }
@@ -295,19 +298,31 @@ export class DatabaseStorage implements IStorage {
 
   // Job Queue Methods
   async enqueueJob(job: InsertJobQueue): Promise<JobQueue> {
+    // Ensure job has required userId and jobId
+    if (!job.userId || !job.jobId) {
+      throw new Error('userId and jobId are required for enqueuing a job');
+    }
+
     const [newJob] = await db
       .insert(jobQueue)
-      .values(job)
+      .values(job as any)
       .returning();
     return newJob;
   }
 
   async enqueueJobs(jobs: InsertJobQueue[]): Promise<JobQueue[]> {
     if (!jobs.length) return [];
-    
+
+    // Validate that all jobs have required fields
+    for (const job of jobs) {
+      if (!job.userId || !job.jobId) {
+        throw new Error('userId and jobId are required for enqueuing jobs');
+      }
+    }
+
     const newJobs = await db
       .insert(jobQueue)
-      .values(jobs)
+      .values(jobs as any[])
       .returning();
     return newJobs;
   }
@@ -378,45 +393,66 @@ export class DatabaseStorage implements IStorage {
 
   async createUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
     // Check if profile already exists
+    if (!profile || !profile.userId) {
+      throw new Error('Valid profile with userId is required');
+    }
+
     const existingProfile = await this.getUserProfile(profile.userId);
-    
+
     if (existingProfile) {
-      // Update existing profile
-      return await this.updateUserProfile(profile.userId, profile);
+      // Update existing profile - convert it to a compatible format first
+      const existingProfileData = {
+        ...profile,
+        dateOfBirth: profile.dateOfBirth ? String(profile.dateOfBirth) : undefined
+      };
+      return await this.updateUserProfile(profile.userId, existingProfileData as any);
     }
     
     // Calculate initial profile completeness
     const completeness = await this.calculateInitialProfileCompleteness(profile);
     
-    // Create new profile
+    // Create new profile with date conversion for dateOfBirth
+    const preparedProfile = {
+      ...profile,
+      // Handle dateOfBirth - use toString() if it exists or use it as-is
+      dateOfBirth: profile.dateOfBirth ? String(profile.dateOfBirth) : undefined,
+      profileCompleteness: completeness,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
     const [newProfile] = await db
       .insert(userProfiles)
-      .values({
-        ...profile,
-        profileCompleteness: completeness,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
+      .values(preparedProfile as any)
       .returning();
     
     return newProfile;
   }
 
-  async updateUserProfile(userId: number, data: Partial<UserProfile>): Promise<UserProfile | undefined> {
+  async updateUserProfile(userId: number, data: Partial<UserProfile>): Promise<UserProfile> {
     // Recalculate profile completeness
     let completeness = await this.calculateProfileCompleteness(userId);
-    
+
+    // Handle dateOfBirth correctly - it's a string in the database schema
+    const preparedData = {
+      ...data,
+      // Handle dateOfBirth - convert to string if it exists
+      dateOfBirth: data.dateOfBirth ? String(data.dateOfBirth) : undefined,
+      profileCompleteness: completeness,
+      updatedAt: new Date(),
+    };
+
     const [updatedProfile] = await db
       .update(userProfiles)
-      .set({
-        ...data,
-        profileCompleteness: completeness,
-        updatedAt: new Date(),
-      })
+      .set(preparedData as any)
       .where(eq(userProfiles.userId, userId))
       .returning();
     
-    return updatedProfile || undefined;
+    if (!updatedProfile) {
+      throw new Error(`Failed to update profile for user ${userId}`);
+    }
+    
+    return updatedProfile;
   }
 
   // Helper function to calculate initial profile completeness
@@ -479,12 +515,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio> {
+    if (!portfolio || !portfolio.userId) {
+      throw new Error('Valid portfolio with userId is required');
+    }
+
     const [newPortfolio] = await db
       .insert(portfolios)
       .values({
         ...portfolio,
         uploadedAt: new Date(),
-      })
+      } as any)
       .returning();
     return newPortfolio;
   }

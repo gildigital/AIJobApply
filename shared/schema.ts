@@ -86,12 +86,14 @@ export const users = pgTable("users", {
   isAutoApplyEnabled: boolean("is_auto_apply_enabled").default(false).notNull(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-  name: true,
-  email: true,
-  location: true,
+// Use manual schema definition to avoid type errors with drizzle-zod
+export const insertUserSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+  name: z.string(),
+  email: z.string(),
+  location: z.string().optional(),
+  onboardingCompleted: z.boolean().optional().default(false),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -107,8 +109,14 @@ export const applicationAnswers = pgTable("application_answers", {
   type: text("type").notNull(),
 });
 
-export const insertApplicationAnswerSchema = createInsertSchema(applicationAnswers).omit({
-  id: true,
+// Manual schema definition to avoid type errors
+export const insertApplicationAnswerSchema = z.object({
+  userId: z.number(),
+  questionText: z.string(),
+  answer: z.string(),
+  category: z.string(),
+  type: z.string(),
+  isOptional: z.boolean().optional().default(false),
 });
 
 export type InsertApplicationAnswer = z.infer<typeof insertApplicationAnswerSchema>;
@@ -123,8 +131,13 @@ export const resumes = pgTable("resumes", {
   uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
 });
 
-export const insertResumeSchema = createInsertSchema(resumes).omit({
-  id: true,
+// Manual schema definition to avoid type errors
+export const insertResumeSchema = z.object({
+  userId: z.number(),
+  filename: z.string(),
+  fileData: z.string(),
+  parsedText: z.string().optional(),
+  uploadedAt: z.date().optional(),
 });
 
 export type InsertResume = z.infer<typeof insertResumeSchema>;
@@ -158,18 +171,34 @@ export const autoApplyLogs = pgTable("auto_apply_logs", {
   timestamp: timestamp("timestamp").notNull().defaultNow(),
 });
 
-export const insertJobTrackerSchema = createInsertSchema(jobTracker).omit({
-  id: true,
-  updatedAt: true,
-  createdAt: true,
+// Manual schema definition to avoid type errors
+export const insertJobTrackerSchema = z.object({
+  userId: z.number(),
+  jobTitle: z.string(),
+  company: z.string(),
+  link: z.string().optional(),
+  status: z.string(),
+  applicationStatus: z.string().optional(),
+  notes: z.string().optional(),
+  appliedAt: z.date().optional(),
+  submittedAt: z.date().optional(),
+  externalJobId: z.string().optional(),
+  matchScore: z.number().optional(),
+  matchExplanation: z.string().optional(),
+  source: z.string().optional(),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
 });
 
 export type InsertJobTracker = z.infer<typeof insertJobTrackerSchema>;
 export type JobTracker = typeof jobTracker.$inferSelect;
 
-export const insertAutoApplyLogSchema = createInsertSchema(autoApplyLogs).omit({
-  id: true,
-  timestamp: true,
+// For autoApplyLogs, create schema manually to avoid schema type errors
+export const insertAutoApplyLogSchema = z.object({
+  userId: z.number(),
+  jobId: z.number().optional(),
+  status: z.string(),
+  message: z.string().optional(),
 });
 
 export type InsertAutoApplyLog = z.infer<typeof insertAutoApplyLogSchema>;
@@ -217,13 +246,17 @@ export const jobQueue = pgTable("job_queue", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const insertJobQueueSchema = createInsertSchema(jobQueue).omit({
-  id: true,
-  createdAt: true,
-  processedAt: true,
-  status: true,
-  error: true,
-  attemptCount: true,
+// Manual schema definition to avoid type errors
+export const insertJobQueueSchema = z.object({
+  userId: z.number(),
+  jobId: z.number(),
+  priority: z.number().optional().default(0),
+  status: z.string().optional().default("pending"),
+  createdAt: z.date().optional(),
+  processedAt: z.date().optional(),
+  error: z.string().optional(),
+  attemptCount: z.number().optional().default(0),
+  updatedAt: z.date().optional(),
 });
 export type InsertJobQueue = z.infer<typeof insertJobQueueSchema>;
 export type JobQueue = typeof jobQueue.$inferSelect;
@@ -271,11 +304,36 @@ export const userProfiles = pgTable("user_profiles", {
   profileCompleteness: integer("profile_completeness").default(0).notNull(), // 0-100 percentage
 });
 
-export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  profileCompleteness: true,
+// Manual schema definition to avoid type errors
+export const insertUserProfileSchema = z.object({
+  userId: z.number(),
+  fullName: z.string().optional(),
+  email: z.string().optional(),
+  phoneNumber: z.string().optional(),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zipCode: z.string().optional(),
+  country: z.string().optional(),
+  dateOfBirth: z.date().optional(),
+  jobTitlesOfInterest: z.array(z.string()).optional(),
+  locationsOfInterest: z.array(z.string()).optional(),
+  minSalaryExpectation: z.number().optional(),
+  excludedCompanies: z.array(z.string()).optional(),
+  willingToRelocate: z.boolean().optional(),
+  matchScoreThreshold: z.number().optional(),
+  preferredWorkArrangement: z.array(z.string()).optional(),
+  workplaceOfInterest: z.array(z.string()).optional(),
+  jobExperienceLevel: z.array(z.string()).optional(),
+  activeSecurityClearance: z.boolean().optional(),
+  clearanceDetails: z.string().optional(),
+  personalWebsite: z.string().optional(),
+  linkedinProfile: z.string().optional(),
+  githubProfile: z.string().optional(),
+  portfolioLink: z.string().optional(),
+  profileCompleteness: z.number().optional(),
+  createdAt: z.date().optional(),
+  updatedAt: z.date().optional(),
 });
 
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
@@ -291,9 +349,13 @@ export const portfolios = pgTable("portfolios", {
   uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
 });
 
-export const insertPortfolioSchema = createInsertSchema(portfolios).omit({
-  id: true,
-  uploadedAt: true,
+// Manual schema definition to avoid type errors
+export const insertPortfolioSchema = z.object({
+  userId: z.number(),
+  filename: z.string(),
+  fileData: z.string(),
+  fileType: z.string(),
+  uploadedAt: z.date().optional(),
 });
 
 export type InsertPortfolio = z.infer<typeof insertPortfolioSchema>;

@@ -1,5 +1,5 @@
 import { UserProfile, JobPreferences } from "@shared/schema";
-import { storage } from "../storage";
+import { storage } from "../storage.js";
 import crypto from "crypto";
 import Bottleneck from "bottleneck";
 

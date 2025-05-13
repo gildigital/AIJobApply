@@ -1,4 +1,4 @@
-import { storage } from "../storage";
+import { storage } from "../storage.js";
 import { SubscriptionPlan, subscriptionPlans } from "@shared/schema";
 
 export interface SubscriptionAccessResult {

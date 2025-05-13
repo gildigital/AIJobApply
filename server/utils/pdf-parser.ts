@@ -8,7 +8,7 @@
  * @param fileData Base64 encoded PDF file data
  * @returns Promise resolving to the extracted text content
  */
-import { extractTextFromPDF } from './resume-parser';
+import { extractTextFromPDF } from './resume-parser.js';
 
 /**
  * Extract text from a PDF stored as base64 string
@@ -41,4 +41,4 @@ async function extractTextFromPDFBase64(fileData: string): Promise<string> {
 }
 
 export { extractTextFromPDFBase64 };
-export { extractTextFromPDF } from './resume-parser';
+export { extractTextFromPDF } from './resume-parser.js';

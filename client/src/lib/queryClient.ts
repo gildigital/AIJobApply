@@ -1,17 +1,36 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+const API_BASE_URL =
+  import.meta.env.VITE_PLAYWRIGHT_WORKER_URL || "http://localhost:5000";
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    // Try to parse as JSON for more detailed error messages if possible
+    let errorDetails = text;
+    try {
+      const jsonError = JSON.parse(text);
+      if (jsonError && jsonError.message) {
+        errorDetails = jsonError.message;
+        if (jsonError.errors) {
+          // For Zod validation errors
+          errorDetails += `: ${JSON.stringify(jsonError.errors)}`;
+        }
+      }
+    } catch (e) {
+      // Not a JSON error, stick with text
+    }
+    throw new Error(`${res.status}: ${errorDetails}`);
   }
 }
 
 export async function apiRequest(
   method: string,
-  url: string,
-  data?: unknown | undefined,
+  relativePath: string,
+  data?: unknown | undefined
 ): Promise<Response> {
+  const url = `${API_BASE_URL}${relativePath}`; // Construct the full URL
+
   const res = await fetch(url, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
@@ -24,12 +43,17 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
-    const res = await fetch(queryKey[0] as string, {
+export const getQueryFn: <TData = unknown>(options?: {
+  on401?: UnauthorizedBehavior;
+}) => QueryFunction<TData | null> =  // Adjusted return type to include null
+  (
+    { on401: unauthorizedBehavior } = { on401: "throw" } // Default options
+  ) =>
+  async <TData = unknown>({ queryKey }: { queryKey: readonly unknown[] }) => {
+    const relativePath = queryKey[0] as string;
+    const url = `${API_BASE_URL}${relativePath}`; // Construct the full URL
+
+    const res = await fetch(url, {
       credentials: "include",
     });
 
@@ -38,13 +62,23 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+
+    // Handle cases where response might be empty (e.g., 204 No Content)
+    if (res.status === 204 || res.headers.get("content-length") === "0") {
+      return null; // Or an appropriate representation of no content for your TData type
+    }
+    return (await res.json()) as TData;
   };
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: getQueryFn({ on401: "throw" }),
+      // Now pass options to getQueryFn if needed, or it uses its own default
+      queryFn: getQueryFn({ on401: "throw" }) as QueryFunction<
+        unknown,
+        readonly unknown[],
+        never
+      >,
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: Infinity,

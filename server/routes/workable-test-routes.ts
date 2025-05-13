@@ -1,6 +1,6 @@
 import { Express, Request, Response } from "express";
-import { workableScraper } from "../services/workable-scraper";
-import { storage } from "../storage";
+import { workableScraper } from "../services/workable-scraper.js";
+import { storage } from "../storage.js";
 
 /**
  * Register test routes for Workable job scraper
@@ -22,12 +22,13 @@ export function registerWorkableTestRoutes(app: Express) {
       if (!userProfile) {
         console.log(`Creating test user profile for user ID: ${userId}`);
         try {
-          // Create a minimal test profile
+          // Create a minimal test profile with proper types
           userProfile = await storage.createUserProfile({
             userId,
-            jobTitlesOfInterest: ['Software Engineer', 'Frontend Developer', 'Full Stack Developer'],
-            locationsOfInterest: ['Remote', 'San Francisco, CA'],
-            preferredWorkArrangement: 'remote',
+            // Using object properties that match the expected schema
+            jobTitlesOfInterest: ['Software Engineer', 'Frontend Developer', 'Full Stack Developer'] as any,
+            locationsOfInterest: ['Remote', 'San Francisco, CA'] as any, 
+            preferredWorkArrangement: 'remote' as any,
             willingToRelocate: false
           });
           console.log('Created test user profile');
@@ -36,14 +37,14 @@ export function registerWorkableTestRoutes(app: Express) {
         }
       }
       
-      const jobs = await workableScraper.getWorkableJobsForUser(userId);
+      const jobsResult = await workableScraper.getWorkableJobsForUser(userId);
       
       res.json({
         success: true,
         userId,
         userProfile,
-        jobCount: jobs.length,
-        jobs
+        jobCount: jobsResult.jobs.length,
+        jobs: jobsResult.jobs
       });
     } catch (error) {
       console.error("Error in workable-jobs test route:", error);

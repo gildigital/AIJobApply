@@ -2,8 +2,8 @@
  * Integration between WorkableScraper and ScrollBasedScraper
  * This file provides a unified interface to migrate from pagination to infinite scrolling
  */
-import { workableScraper, JobListing, WorkableJob } from './workable-scraper';
-import { ScrollBasedScraper } from './scroll-based-scraper';
+import { workableScraper, JobListing, WorkableJob } from './workable-scraper.js';
+import { ScrollBasedScraper } from './scroll-based-scraper.js';
 
 // Create instance here to avoid circular import issues
 const scrollBasedScraper = new ScrollBasedScraper();

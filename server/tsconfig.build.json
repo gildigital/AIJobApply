@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../dist",
+    "rootDir": "../",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "moduleResolution": "node"
+  },
+  "include": ["../server/**/*", "../shared/**/*", "../vite.config.ts"],
+  "exclude": [
+    "../client",
+    "node_modules",
+    "**/*.test.ts",
+    "**/workable-scraper-updated.ts",
+    "**/workable-scraper.backup.ts",
+    "**/routes/workable-schema-routes.ts"
+  ]
+}

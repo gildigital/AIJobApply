@@ -1,31 +1,42 @@
 import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
-import { registerApiTestRoute } from "./routes/api-test-route";
-import { registerPlaywrightTestRoutes } from "./routes/playwright-test-routes";
-import { registerEnvTestRoutes } from "./routes/env-test-routes";
-import { registerDirectFetchTestRoutes } from "./routes/direct-fetch-test-routes";
-import { registerWorkableDirectFetch } from "./routes/workable-direct-fetch";
-import { registerWorkableTestRoutes } from "./routes/workable-test-routes";
-import { registerDiagnosticsRoutes } from "./routes/diagnostics-routes";
+import cors from "cors";
+import { registerRoutes } from "./routes.js";
+// import { setupVite, serveStatic, log } from "./vite.js";
+import { log } from "./vite.js";
+import { registerApiTestRoute } from "./routes/api-test-route.js";
+import { registerPlaywrightTestRoutes } from "./routes/playwright-test-routes.js";
+import { registerEnvTestRoutes } from "./routes/env-test-routes.js";
+import { registerDirectFetchTestRoutes } from "./routes/direct-fetch-test-routes.js";
+import { registerWorkableDirectFetch } from "./routes/workable-direct-fetch.js";
+import { registerWorkableTestRoutes } from "./routes/workable-test-routes.js";
+import { registerDiagnosticsRoutes } from "./routes/diagnostics-routes.js";
 
 const app = express();
 
+// Enable CORS for Vercel frontend
+app.use(
+  cors({
+    origin: process.env.ALLOWED_ORIGIN || "*",
+    credentials: true,
+  })
+);
+
 // Create a raw body parser for Stripe webhook requests
-const rawBodyParser = express.raw({ type: 'application/json' });
+const rawBodyParser = express.raw({ type: "application/json" });
 
 // Special handling for the webhook route to get the raw body
-app.use('/api/webhook', rawBodyParser);
+app.use("/api/webhook", rawBodyParser);
 
 // Standard body parser for all other routes
 app.use((req, res, next) => {
-  if (req.originalUrl === '/api/webhook') {
+  if (req.originalUrl === "/api/webhook") {
     next();
   } else {
     express.json()(req, res, next);
   }
 });
+
 app.use(express.urlencoded({ extended: false }));
 
 app.use((req, res, next) => {
@@ -70,7 +81,7 @@ app.use((req, res, next) => {
   registerWorkableTestRoutes(app);
 
   // Register diagnostics routes for development
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV === "development") {
     registerDiagnosticsRoutes(app);
   }
 
@@ -82,24 +93,20 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
-  }
+  // // importantly only setup vite in development and after
+  // // setting up all the other routes so the catch-all route
+  // // doesn't interfere with the other routes
+  // if (app.get("env") === "development") {
+  //   await setupVite(app, server);
+  // } else {
+  //   serveStatic(app);
+  // }
 
-  // ALWAYS serve the app on port 5000
-  // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = 5000;
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
-    log(`serving on port ${port}`);
+  // Use environment port or default to 5000
+  // Railway will set PORT for us automatically
+  const port = Number(process.env.PORT || 5000);
+  // Listen on all interfaces (0.0.0.0) which is important for containers
+  server.listen(port, "0.0.0.0", () => {
+    log(`🚀 Server listening on port ${port}`);
   });
 })();

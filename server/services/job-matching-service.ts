@@ -2,14 +2,14 @@
  * Job Matching Service - Scores how well a job matches a user's profile
  */
 
-import { storage } from "../storage";
-import { db } from "../db";
-import { matchResumeToJob, MatchResult } from "../utils/ai-service";
-import { JobListing as ScraperJobListing } from "./job-scraper";
-import { JobListing as AutoApplyJobListing } from "./auto-apply-service";
+import { storage } from "../storage.js";
+import { db } from "../db.js";
+import { matchResumeToJob, MatchResult } from "../utils/ai-service.js";
+import { JobListing as ScraperJobListing } from "./job-scraper.js";
+import { JobListing as AutoApplyJobListing } from "./auto-apply-service.js";
 import { jobTracker, InsertJobTracker } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
-import { extractTextFromPDF } from "../utils/pdf-parser";
+import { extractTextFromPDF } from "../utils/pdf-parser.js";
 
 // Generic job type that works with both AutoApplyJobListing and ScraperJobListing
 export type JobListing = {
@@ -60,7 +60,7 @@ export async function scoreJobFit(userId: number, job: JobListing): Promise<Matc
   if (!resumeText && resume.fileData) {
     try {
       // Extract text from PDF if it's not already stored
-      resumeText = await extractTextFromPDF(resume.fileData);
+      resumeText = await extractTextFromPDF(Buffer.from(resume.fileData, 'base64'));
       
       // Store the parsed text for future use
       await storage.updateResume(userId, { parsedText: resumeText });
@@ -189,6 +189,6 @@ export async function addJobWithMatchScore(
   };
   
   // Insert into database
-  const [result] = await db.insert(jobTracker).values(jobData).returning();
+  const [result] = await db.insert(jobTracker).values(jobData as any).returning();
   return result;
 }

@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { db } from "../db.js";
 
 /**
  * Migration to add the 'standby' status to job_queue table and add updated_at column

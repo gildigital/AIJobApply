@@ -1,12 +1,12 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
-import { Express } from "express";
+import type { Express } from "express";
 import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { storage } from "./storage";
-import { User as SelectUser, insertUserSchema } from "@shared/schema";
-import { z } from "zod";
+import { storage } from "./storage.js";
+import { User as SelectUser, insertUserSchema } from "./local-schema.js";
+import * as z from "zod";
 
 declare global {
   namespace Express {
@@ -60,7 +60,9 @@ export function setupAuth(app: Express) {
         if (!user || !(await comparePasswords(password, user.password))) {
           return done(null, false, { message: "Invalid username or password" });
         } else {
-          return done(null, user);
+          // TypeScript complains about the user type not matching Express.User, but these will be the same
+          // once the DB user is serialized to the session
+          return done(null, user as unknown as Express.User);
         }
       } catch (err) {
         return done(err);
@@ -68,11 +70,11 @@ export function setupAuth(app: Express) {
     }),
   );
 
-  passport.serializeUser((user, done) => done(null, user.id));
+  passport.serializeUser((user: Express.User, done) => done(null, user.id));
   passport.deserializeUser(async (id: number, done) => {
     try {
       const user = await storage.getUser(id);
-      done(null, user);
+      done(null, user as unknown as Express.User);
     } catch (err) {
       done(err);
     }
@@ -89,9 +91,11 @@ export function setupAuth(app: Express) {
       const userData = registerSchema.parse(req.body);
       
       // Check if username already exists
-      const existingUser = await storage.getUserByUsername(userData.username);
-      if (existingUser) {
-        return res.status(400).json({ message: "Username already exists" });
+      if (userData.username) {
+        const existingUser = await storage.getUserByUsername(userData.username);
+        if (existingUser) {
+          return res.status(400).json({ message: "Username already exists" });
+        }
       }
 
       // Check if email already exists
@@ -107,7 +111,7 @@ export function setupAuth(app: Express) {
       });
 
       // Automatically log in the user
-      req.login(user, (err) => {
+      req.login(user as unknown as Express.User, (err) => {
         if (err) return next(err);
         // Don't send password back to client
         const { password, ...safeUser } = user;
@@ -125,7 +129,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
+    passport.authenticate("local", (err: Error | null, user: Express.User | false, info: any) => {
       if (err) return next(err);
       if (!user) {
         return res.status(401).json({ message: info?.message || "Invalid credentials" });

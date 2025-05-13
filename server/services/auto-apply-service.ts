@@ -1,14 +1,14 @@
-import { db } from "../db";
+import { db } from "../db.js";
 import { jobTracker, autoApplyLogs, users, InsertJobTracker, InsertAutoApplyLog } from "@shared/schema";
 import { eq, and, gte, sql, or } from "drizzle-orm";
-import { storage } from "../storage";
+import { storage } from "../storage.js";
 
 /**
  * Import the Workable job functions - use the integrated version that supports both
  * pagination and infinite scrolling implementations
  */
-import { workableScraper } from "./workable-scraper";
-import { getWorkableJobsForUser } from "./workable-scroll-integration";
+import { workableScraper } from "./workable-scraper.js";
+import { getWorkableJobsForUser } from "./workable-scroll-integration.js";
 
 /**
  * Represents a job listing from an external source
@@ -835,7 +835,7 @@ export async function addJobToTracker(
     source: job.source
   };
   
-  const [result] = await db.insert(jobTracker).values(jobData).returning();
+  const [result] = await db.insert(jobTracker).values(jobData as any).returning();
   return result;
 }
 
@@ -843,7 +843,7 @@ export async function addJobToTracker(
  * Creates a log entry for the auto-apply process
  */
 export async function createAutoApplyLog(log: Omit<InsertAutoApplyLog, "timestamp">): Promise<void> {
-  await db.insert(autoApplyLogs).values(log);
+  await db.insert(autoApplyLogs).values(log as any);
 }
 
 /**

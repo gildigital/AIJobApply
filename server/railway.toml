@@ -1,0 +1,6 @@
+[build]
+builder = "nixpacks"
+buildCommand = "./railway-build.sh"
+
+[deploy]
+startCommand = "node dist/index.js"

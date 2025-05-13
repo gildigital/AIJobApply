@@ -1,5 +1,5 @@
 import { Express, Request, Response } from "express";
-import { storage } from "../storage";
+import { storage } from "../storage.js";
 import { insertUserProfileSchema, contactInfoSchema, jobPreferencesSchema, onlinePresenceSchema } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
@@ -30,18 +30,6 @@ const upload = multer({
   },
 });
 
-// Type declaration for Express session with User
-declare global {
-  namespace Express {
-    interface User {
-      id: number;
-      name: string;
-      email: string;
-      [key: string]: any;
-    }
-  }
-}
-
 // Middleware to check if user is authenticated
 function isAuthenticated(req: Request, res: Response, next: Function) {
   if (req.isAuthenticated() && req.user) {
@@ -52,17 +40,19 @@ function isAuthenticated(req: Request, res: Response, next: Function) {
 
 export function registerProfileRoutes(app: Express) {
   // Get user profile
-  app.get('/api/profile', isAuthenticated, async (req, res) => {
+  app.get('/api/profile', isAuthenticated, async (req: Request, res) => {
     try {
-      const userId = req.user.id;
+      // isAuthenticated middleware ensures req.user is defined
+      const user = req.user!;
+      const userId = user.id;
       const profile = await storage.getUserProfile(userId);
       
       if (!profile) {
         // Return empty profile with defaults if not found
         return res.status(200).json({
           userId,
-          fullName: req.user.name || '',
-          email: req.user.email || '',
+          fullName: user.name || '',
+          email: user.email || '',
           profileCompleteness: 0
         });
       }
@@ -75,9 +65,10 @@ export function registerProfileRoutes(app: Express) {
   });
   
   // Create or update user profile
-  app.post('/api/profile', isAuthenticated, async (req, res) => {
+  app.post('/api/profile', isAuthenticated, async (req: Request, res) => {
     try {
-      const userId = req.user.id;
+      const user = req.user!;
+      const userId = user.id;
       const profileData = { ...req.body, userId };
       
       // Validate the profile data
@@ -110,9 +101,10 @@ export function registerProfileRoutes(app: Express) {
   });
   
   // Update contact information
-  app.patch('/api/profile/contact', isAuthenticated, async (req, res) => {
+  app.patch('/api/profile/contact', isAuthenticated, async (req: Request, res) => {
     try {
-      const userId = req.user.id;
+      const user = req.user!;
+      const userId = user.id;
       const contactData = req.body;
       
       // Validate the contact data
@@ -145,9 +137,10 @@ export function registerProfileRoutes(app: Express) {
   });
   
   // Update job preferences
-  app.patch('/api/profile/job-preferences', isAuthenticated, async (req, res) => {
+  app.patch('/api/profile/job-preferences', isAuthenticated, async (req: Request, res) => {
     try {
-      const userId = req.user.id;
+      const user = req.user!;
+      const userId = user.id;
       const preferencesData = req.body;
       
       // Validate the preferences data
@@ -180,9 +173,10 @@ export function registerProfileRoutes(app: Express) {
   });
   
   // Update online presence
-  app.patch('/api/profile/online-presence', isAuthenticated, async (req, res) => {
+  app.patch('/api/profile/online-presence', isAuthenticated, async (req: Request, res) => {
     try {
-      const userId = req.user.id;
+      const user = req.user!;
+      const userId = user.id;
       const onlineData = req.body;
       
       // Validate the online presence data
@@ -215,13 +209,14 @@ export function registerProfileRoutes(app: Express) {
   });
   
   // Portfolio file upload
-  app.post('/api/profile/portfolio', isAuthenticated, upload.single('file'), async (req, res) => {
+  app.post('/api/profile/portfolio', isAuthenticated, upload.single('file'), async (req: Request, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: 'No file uploaded' });
       }
       
-      const userId = req.user.id;
+      const user = req.user!;
+      const userId = user.id;
       const file = req.file;
       
       // Convert file to base64
@@ -245,9 +240,10 @@ export function registerProfileRoutes(app: Express) {
   });
   
   // Get all portfolios for a user
-  app.get('/api/profile/portfolios', isAuthenticated, async (req, res) => {
+  app.get('/api/profile/portfolios', isAuthenticated, async (req: Request, res) => {
     try {
-      const userId = req.user.id;
+      const user = req.user!;
+      const userId = user.id;
       const portfolios = await storage.getUserPortfolios(userId);
       
       // Don't return the full file data in the response
@@ -261,10 +257,11 @@ export function registerProfileRoutes(app: Express) {
   });
   
   // Get a specific portfolio file
-  app.get('/api/profile/portfolio/:id', isAuthenticated, async (req, res) => {
+  app.get('/api/profile/portfolio/:id', isAuthenticated, async (req: Request, res) => {
     try {
       const portfolioId = parseInt(req.params.id);
-      const userId = req.user.id;
+      const user = req.user!;
+      const userId = user.id;
       
       const portfolio = await storage.getPortfolio(portfolioId);
       
@@ -291,10 +288,11 @@ export function registerProfileRoutes(app: Express) {
   });
   
   // Delete a portfolio file
-  app.delete('/api/profile/portfolio/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/profile/portfolio/:id', isAuthenticated, async (req: Request, res) => {
     try {
       const portfolioId = parseInt(req.params.id);
-      const userId = req.user.id;
+      const user = req.user!;
+      const userId = user.id;
       
       const portfolio = await storage.getPortfolio(portfolioId);
       
@@ -317,9 +315,10 @@ export function registerProfileRoutes(app: Express) {
   });
   
   // Calculate profile completeness
-  app.get('/api/profile/completeness', isAuthenticated, async (req, res) => {
+  app.get('/api/profile/completeness', isAuthenticated, async (req: Request, res) => {
     try {
-      const userId = req.user.id;
+      const user = req.user!;
+      const userId = user.id;
       const completeness = await storage.calculateProfileCompleteness(userId);
       
       return res.status(200).json({ completeness });
@@ -330,13 +329,15 @@ export function registerProfileRoutes(app: Express) {
   });
 
   // Update match score threshold
-  app.patch('/api/profile/match-threshold', isAuthenticated, async (req, res) => {
+  app.patch('/api/profile/match-threshold', isAuthenticated, async (req: Request, res) => {
     try {
+      // The isAuthenticated middleware already checks this, but we'll keep it for safety
       if (!req.user) {
         return res.status(401).json({ message: 'Not authenticated' });
       }
       
-      const userId = req.user.id;
+      const user = req.user;
+      const userId = user.id;
       const { matchScoreThreshold } = req.body;
       
       // Validate the threshold value

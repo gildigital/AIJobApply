@@ -2,7 +2,7 @@
  * This file contains test functions that can be used to simulate job application
  * success and failure data to help diagnose why 95% of Workable applications fail.
  */
-import { workableScraper } from '../services/workable-scraper';
+import { workableScraper } from '../services/workable-scraper.js';
 
 // Mock successful job application URLs
 const successfulUrls = [

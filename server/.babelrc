@@ -1,0 +1,9 @@
+{
+  "presets": [
+    ["@babel/preset-env", { "targets": { "node": "18" }, "modules": false }],
+    ["@babel/preset-typescript", { "allowDeclareFields": true }]
+  ],
+  "plugins": [
+    "add-import-extension"
+  ]
+}

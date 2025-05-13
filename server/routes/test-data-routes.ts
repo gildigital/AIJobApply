@@ -1,6 +1,6 @@
 import { Express } from "express";
-import { db } from "../db";
-import { storage } from "../storage";
+import { db } from "../db.js";
+import { storage } from "../storage.js";
 import { jobTracker, autoApplyLogs } from "@shared/schema";
 import { eq } from "drizzle-orm";
 

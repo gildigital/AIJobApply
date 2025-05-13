@@ -8,13 +8,13 @@
  * 2. Phase 2: Prepare the data and submit the application
  */
 
-import { workableScraper } from "./workable-scraper";
-import type { JobListing } from "./auto-apply-service";
+import { workableScraper } from "./workable-scraper.js";
+import type { JobListing } from "./auto-apply-service.js";
 import {
   generateApplicationAnswer,
   generateCoverLetter as generateAICoverLetter,
   selectBestOptionWithAI,
-} from "../utils/application-ai-service";
+} from "../utils/application-ai-service.js";
 
 /**
  * Submit a job application to Workable using the schema-driven approach

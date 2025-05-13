@@ -4,7 +4,7 @@
  */
 import Bottleneck from 'bottleneck';
 import { EventSource } from 'eventsource';
-import { WorkableJob, JobListing } from './workable-scraper';
+import { WorkableJob, JobListing } from './workable-scraper.js';
 
 // Interface for search state used by the scraper
 interface SearchState {

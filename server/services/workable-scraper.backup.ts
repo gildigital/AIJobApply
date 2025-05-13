@@ -1,5 +1,5 @@
 import { UserProfile, JobPreferences } from "@shared/schema";
-import { storage } from "../storage";
+import { storage } from "../storage.js";
 import crypto from "crypto";
 import Bottleneck from "bottleneck";
 
@@ -440,9 +440,10 @@ export class WorkableScraper {
       }
 
       // Update workplace logic: prefer user's remote preference
-      if (profile.preferredWorkArrangement === "remote") {
+      const workArrangement = profile.preferredWorkArrangement as string;
+      if (workArrangement === "remote") {
         combinedParams.workplace = "remote";
-      } else if (profile.preferredWorkArrangement === "hybrid") {
+      } else if (workArrangement === "hybrid") {
         combinedParams.workplace = "hybrid";
       }
       // Only use 'any' if neither remote nor hybrid is set

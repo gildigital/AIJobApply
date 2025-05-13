@@ -2,7 +2,7 @@
  * User summary generator
  * Generates a concise summary from resume text
  */
-import { generateResumeSummary } from './resume-parser';
+import { generateResumeSummary } from './resume-parser.js';
 import { OpenAI } from 'openai';
 
 // Check if OpenAI API key is available

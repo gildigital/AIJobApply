@@ -1,12 +1,12 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
-import { setupAuth } from "./auth";
+import { storage } from "./storage.js";
+import { setupAuth } from "./auth.js";
 import multer from "multer";
 import { z } from "zod";
-import { insertApplicationAnswerSchema, insertJobTrackerSchema, requiredQuestionsSchema, demographicQuestionsSchema, subscriptionPlans, type User } from "@shared/schema";
-import { extractTextFromPDFBase64 } from "./utils/pdf-parser";
-import { generateUserSummary } from "./utils/user-summary-generator";
+import { insertApplicationAnswerSchema, insertJobTrackerSchema, requiredQuestionsSchema, demographicQuestionsSchema, subscriptionPlans, type User } from "./local-schema.js";
+import { extractTextFromPDFBase64 } from "./utils/pdf-parser.js";
+import { generateUserSummary } from "./utils/user-summary-generator.js";
 import Stripe from "stripe";
 
 // Define JobListing interface for type safety in job search progress tracking
@@ -20,28 +20,28 @@ interface JobListing {
   matchScore?: number;
   externalJobId?: string;
 }
-import { 
-  startAutoApply, 
-  getAutoApplyStatus, 
+import {
+  startAutoApply,
+  getAutoApplyStatus,
   getAutoApplyLogs,
   createAutoApplyLog
-} from "./services/auto-apply-service";
+} from "./services/auto-apply-service.js";
 import {
   enqueueJobsForUser,
   getAutoApplyStatus as getWorkerStatus,
   startAutoApplyWorker,
   stopAutoApplyWorker
-} from "./services/auto-apply-worker";
-import { getWorkableJobsForUser, workableScraper } from "./services/workable-scraper";
-import { registerProfileRoutes } from "./routes/profile-routes";
-import { registerTestDataRoutes } from "./routes/test-data-routes";
-import { registerWorkableTestRoutes } from "./routes/workable-test-routes";
-import { registerWorkableSchemaRoutes } from "./routes/workable-schema-routes";
-import { registerPlaywrightTestRoutes } from "./routes/playwright-test-routes";
-import { registerEnvTestRoutes } from "./routes/env-test-routes";
-import { registerDirectFetchTestRoutes } from "./routes/direct-fetch-test-routes";
-import { registerWorkableDirectFetch } from "./routes/workable-direct-fetch";
-import { registerMigrationRoutes } from "./routes/migration-routes";
+} from "./services/auto-apply-worker.js";
+import { getWorkableJobsForUser, workableScraper } from "./services/workable-scraper.js";
+import { registerProfileRoutes } from "./routes/profile-routes.js";
+import { registerTestDataRoutes } from "./routes/test-data-routes.js";
+import { registerWorkableTestRoutes } from "./routes/workable-test-routes.js";
+import { registerWorkableSchemaRoutes } from "./routes/workable-schema-routes.js";
+import { registerPlaywrightTestRoutes } from "./routes/playwright-test-routes.js";
+import { registerEnvTestRoutes } from "./routes/env-test-routes.js";
+import { registerDirectFetchTestRoutes } from "./routes/direct-fetch-test-routes.js";
+import { registerWorkableDirectFetch } from "./routes/workable-direct-fetch.js";
+import { registerMigrationRoutes } from "./routes/migration-routes.js";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -440,7 +440,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Get the user's subscription access
-      const { checkSubscriptionAccess } = await import("./utils/subscription-utils");
+      const { checkSubscriptionAccess } = await import("./utils/subscription-utils.js");
       const access = await checkSubscriptionAccess(req.user.id);
       
       if (!access.allowed) {
@@ -458,7 +458,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       // Import the auto-apply service
-      const { submitApplication } = await import("./services/auto-apply-service");
+      const { submitApplication } = await import("./services/auto-apply-service.js");
       
       // Attempt to resubmit the application
       const result = await submitApplication(req.user, jobListing);
@@ -493,7 +493,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       
       // Log the resubmission
-      const { createAutoApplyLog } = await import("./services/auto-apply-service");
+      const { createAutoApplyLog } = await import("./services/auto-apply-service.js");
       await createAutoApplyLog({
         userId: req.user.id,
         jobId: jobId,
@@ -542,7 +542,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     try {
-      const { checkSubscriptionAccess, getRemainingApplications } = await import("./utils/subscription-utils");
+      const { checkSubscriptionAccess, getRemainingApplications } = await import("./utils/subscription-utils.js");
       const result = await checkSubscriptionAccess(req.user.id);
       
       // If allowed, include remaining applications
@@ -738,9 +738,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Extract useScrolling parameter from request body (default to undefined to use the global feature flag)
       const { useScrolling } = req.body;
-      
+
       // Import the integrated scraper that supports both pagination and infinite scrolling
-      const { getWorkableJobsForUser } = await import('./services/workable-scroll-integration');
+      const { getWorkableJobsForUser } = await import('./services/workable-scroll-integration.js');
       
       // Call the integrated getWorkableJobsForUser function which can use either implementation 
       const jobListings = await getWorkableJobsForUser(
@@ -990,7 +990,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     try {
       // Import the mock data functions
-      const { mockApplicationData } = await import('./tests/mock-application-data');
+      const { mockApplicationData } = await import('./tests/mock-application-data.js');
       
       // Add mock data
       const stats = mockApplicationData();
@@ -1030,7 +1030,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Import the test URL function
-      const { testSpecificUrl } = await import('./tests/mock-application-data');
+      const { testSpecificUrl } = await import('./tests/mock-application-data.js');
       
       // Test the specific URL
       const stats = testSpecificUrl(url, isSuccess === true, details || {});
@@ -1402,7 +1402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     try {
-      const { searchJobs } = await import("./services/job-scraper");
+      const { searchJobs } = await import("./services/job-scraper.js");
       const { location = "", keywords = "" } = req.query;
       
       // Split keywords by commas if provided
@@ -1447,7 +1447,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Import the job matching service
-      const { scoreJobFit } = await import("./services/job-matching-service");
+      const { scoreJobFit } = await import("./services/job-matching-service.js");
       
       // Create job object
       const jobListing = {
