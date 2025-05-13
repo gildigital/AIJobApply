@@ -1,7 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 const API_BASE_URL =
-  import.meta.env.VITE_VITE_PLAYWRIGHT_WORKER_URL || "http://localhost:5000";
+  import.meta.env.VITE_PLAYWRIGHT_WORKER_URL || "http://localhost:5000";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
