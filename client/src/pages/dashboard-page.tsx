@@ -70,7 +70,9 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <ResumeCard />
             <ApplicationAnswersCard />
-            <AddJobCard />
+            <div className="sm:col-span-2 lg:col-span-3">
+              <AddJobCard />
+            </div>
             <div className="sm:col-span-2 lg:col-span-3">
               <FindJobsCard />
             </div>
