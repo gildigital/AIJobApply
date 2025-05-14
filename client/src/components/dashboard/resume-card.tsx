@@ -131,8 +131,8 @@ export default function ResumeCard() {
       <CardContent>
         {isLoading ? (
           <div className="space-y-3">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-10 w-full" />{" "}
+            <Skeleton className="h-8 w-1/2" />
           </div>
         ) : !resume ? (
           <div className="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
@@ -160,12 +160,18 @@ export default function ResumeCard() {
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-between p-4 border border-gray-200 rounded-md">
-            <div className="flex items-center">
-              <FileType className="h-6 w-6 text-primary-500 mr-3" />
-              <span className="text-sm text-gray-700">{resume.filename}</span>
+          <div className="flex flex-col p-4 border border-gray-200 rounded-md space-y-3">
+            {/* Top Part: File icon and filename */}
+            <div className="flex items-center min-w-0">
+              <FileType className="h-6 w-6 text-primary-500 mr-3 flex-shrink-0" />
+              <span className="text-sm text-gray-700 block overflow-hidden text-ellipsis whitespace-nowrap">
+                {resume.filename}
+              </span>
             </div>
-            <div className="flex space-x-2">
+
+            {/* Bottom Part: View and Replace buttons */}
+            <div className="flex space-x-2 justify-start">
+              {" "}
               <Button
                 variant="outline"
                 size="sm"

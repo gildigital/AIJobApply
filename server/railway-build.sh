@@ -23,7 +23,7 @@ cat > tsconfig.temp.json << EOL
     "target": "ES2022",
     "outDir": "dist",
     "paths": {
-      "@shared/*": ["./local-schema.js"]
+      "@shared/*": ["./shared/*"]
     }
   },
   "include": [
@@ -102,20 +102,77 @@ fi
 # Fix any require statements and import paths in the compiled files
 find dist -type f -name "*.js" -exec sed -i 's/require("dotenv\/config")/import "dotenv\/config"/g' {} \;
 
-# Fix all schema imports to use local-schema.js instead
-echo "Rewriting schema import paths relative to local-schema.js..."
+# Create a radical fix for shared schema imports by directly patching all files
+echo "Direct patching of all import references..."
 
-# From dist/services → ../../local-schema.js
-find dist/services -type f -name "*.js" -exec sed -i 's|from [''"][^''"]*shared/schema[^''"]*[''"]|from "../../local-schema.js"|g' {} \;
+# Create shared directory in dist and ensure the schema is there
+mkdir -p dist/shared
+cp local-schema.js dist/shared/schema.js
 
-# From dist/routes → ../local-schema.js
-find dist/routes -type f -name "*.js" -exec sed -i 's|from [''"][^''"]*shared/schema[^''"]*[''"]|from "../local-schema.js"|g' {} \;
+# Also copy to root dist directory for any direct references
+cp local-schema.js dist/local-schema.js
 
-# From dist root → ./local-schema.js
-find dist -maxdepth 1 -type f -name "*.js" -exec sed -i 's|from [''"][^''"]*shared/schema[^''"]*[''"]|from "./local-schema.js"|g' {} \;
+# Use a simpler approach - just do direct replacements without the resolver
+echo "Skipping resolver approach - using only direct replacements..."
 
-# Further safeguard - search for any remaining references to shared/schema and fix them
-find dist -type f -name "*.js" -exec grep -l "shared/schema" {} \; | xargs -r sed -i 's/[\.\/]*shared\/schema[\.js]*/\.\/local-schema\.js/g'
+# Comprehensive pattern replacement for ALL files
+echo "Direct replacement of all import patterns..."
+
+# 1. Root directory files (@shared/schema -> ./shared/schema.js)
+find dist -maxdepth 1 -type f -name "*.js" -exec sed -i 's|from "@shared/schema"|from "./shared/schema.js"|g' {} \;
+find dist -maxdepth 1 -type f -name "*.js" -exec sed -i 's|from "@shared/schema.js"|from "./shared/schema.js"|g' {} \;
+
+# 2. Files in subdirectories (need to go up one level: ../shared/schema.js)
+find dist/services dist/routes -type f -name "*.js" -exec sed -i 's|from "@shared/schema"|from "../shared/schema.js"|g' {} \;
+find dist/services dist/routes -type f -name "*.js" -exec sed -i 's|from "@shared/schema.js"|from "../shared/schema.js"|g' {} \;
+
+# 3. Dynamic imports
+find dist -maxdepth 1 -type f -name "*.js" -exec sed -i 's|import("@shared/schema")|import("./shared/schema.js")|g' {} \;
+find dist -maxdepth 1 -type f -name "*.js" -exec sed -i 's|import("@shared/schema.js")|import("./shared/schema.js")|g' {} \;
+find dist/services dist/routes -type f -name "*.js" -exec sed -i 's|import("@shared/schema")|import("../shared/schema.js")|g' {} \;
+find dist/services dist/routes -type f -name "*.js" -exec sed -i 's|import("@shared/schema.js")|import("../shared/schema.js")|g' {} \;
+
+# 4. Fix any '@./local-schema.js' references
+find dist -type f -name "*.js" -exec sed -i 's|from "@./local-schema.js"|from "./shared/schema.js"|g' {} \;
+find dist/services dist/routes -type f -name "*.js" -exec sed -i 's|from "@./local-schema.js"|from "../shared/schema.js"|g' {} \;
+
+# 5. Create a direct inline replacement for each file that imports schema
+echo "Creating direct inline variable replacements in files that import schema..."
+
+# Find all files with @shared/schema imports and fix them directly without Python
+for file in $(grep -l "@shared/schema" $(find dist -type f -name "*.js")); do
+  # Determine if this is a file in a subdirectory
+  if [[ "$file" == dist/*/* ]]; then
+    # This is a file in a subdirectory - use parent directory reference
+    rel_path=".."
+  else
+    # This is a file in the root directory - use current directory
+    rel_path="."
+  fi
+  
+  # Insert inline schema definition at top of file
+  echo "Patching $file with inline schema import..."
+  sed -i "1s/^/\/* PATCHED FOR SHARED SCHEMA IMPORTS *\/\n/" "$file"
+  sed -i "2s/^/import * as __SCHEMA_MODULE__ from \"${rel_path}\\/shared\\/schema.js\";\n/" "$file"
+  
+  # Replace all @shared/schema imports with appropriate relative path
+  if [[ "$file" == dist/*/* ]]; then
+    # Files in subdirectories
+    sed -i "s/from [\"']@shared\\/schema[.js]*[\"']/from \"..\/shared\/schema.js\"/g" "$file"
+  else
+    # Files in root directory
+    sed -i "s/from [\"']@shared\\/schema[.js]*[\"']/from \".\\/shared\/schema.js\"/g" "$file"
+  fi
+done
+
+# Handle edge cases and display summary
+echo "Final verification and cleanup..."
+find dist -type f -name "*.js" -exec grep -l "from \"@shared" {} \; || echo "No problematic @shared imports found!"
+find dist -type f -name "*.js" -exec grep -l "from '@shared" {} \; || echo "No problematic @shared imports found!"
+find dist -type f -name "*.js" -exec grep -l "@./local-schema" {} \; || echo "No problematic @./local-schema imports found!"
+
+# Print success message
+echo "Schema import fixes successfully applied"
 
 # Flatten the directory structure - move everything from dist/server to dist
 echo "Flattening directory structure..."
@@ -125,17 +182,42 @@ if [ -d "dist/server" ]; then
 fi
 
 # Create production package.json in dist
-# Make absolutely sure local-schema.js exists in the dist directory
-if [ ! -f "dist/local-schema.js" ]; then
-  echo "WARNING: local-schema.js not found in dist directory. Copying it..."
-  cp local-schema.js dist/
-fi
-
-# Create a shared directory and symlink local-schema.js to it
-# This is a fallback for any imports that might still reference shared/schema.js
-echo "Creating shared schema fallback..."
+# Make absolutely sure local-schema.js and shared schema directories exist
+echo "Ensuring all schema files are in place..."
 mkdir -p dist/shared
-cp dist/local-schema.js dist/shared/schema.js
+
+# Copy local-schema.js to all necessary locations
+cp local-schema.js dist/local-schema.js
+cp local-schema.js dist/shared/schema.js 
+
+# Final fallback: Create a @shared module directory in node_modules
+echo "Creating fallback @shared module in node_modules..."
+mkdir -p dist/node_modules/@shared
+cp local-schema.js dist/node_modules/@shared/schema.js
+
+# Apply comprehensive fixes to ensure schema imports work in all cases
+cat > dist/fix-imports.js << 'EOL'
+// Import redirector for @shared modules
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import fs from 'fs';
+
+// Figure out our location
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Check if schema exists in various locations
+const sharedSchemaPath = join(__dirname, 'shared', 'schema.js');
+const localSchemaPath = join(__dirname, 'local-schema.js');
+
+// Export all the schema contents
+console.log('Schema redirection active - importing from', sharedSchemaPath);
+export * from './shared/schema.js';
+EOL
+
+# Create symlink for fallback situations
+ln -sf local-schema.js dist/schema.js
 
 echo "Creating production package.json in dist..."
 node << 'EOF'
@@ -145,6 +227,13 @@ const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
 const scripts = { postinstall: "patch-package" };
 pkg.scripts = scripts;
 pkg.main = "index.js";
+
+// Add import mappings to fix @shared/schema
+pkg.imports = {
+  "#shared/*": "./shared/*.js",
+  "@shared/*": "./shared/*.js"
+};
+
 // Add the override for pdf-parse to fix the debug mode issue
 if (!pkg.overrides) pkg.overrides = {};
 pkg.overrides["pdf-parse"] = { "exports": "./lib/pdf-parse.js" };
