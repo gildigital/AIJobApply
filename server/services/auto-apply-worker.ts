@@ -229,6 +229,21 @@ async function processJob(queuedJob: JobQueue): Promise<void> {
       return;
     }
 
+    if (!user.isAutoApplyEnabled) {
+      await storage.updateQueuedJob(queuedJob.id, {
+        status: "skipped",
+        error: "Auto-apply is disabled for this user.",
+        processedAt: new Date(),
+      });
+      await createAutoApplyLog({
+        userId: user.id,
+        jobId: job.id,
+        status: "Skipped",
+        message: "Job skipped because auto-apply is disabled for this user.",
+      });
+      return;
+    }
+
     // Check daily limits
     const today = new Date();
     today.setHours(0, 0, 0, 0);
