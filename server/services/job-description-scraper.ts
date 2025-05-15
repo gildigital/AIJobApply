@@ -20,13 +20,23 @@ export async function fetchJobDescription(jobUrl: string): Promise<string> {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Workable job description is usually in a div with class 'section--text' or similar
-    let description = $('.section--text').text().trim();
+    // Try the most specific selector first (Workable's main job description)
+    let description = $('[data-ui="job-breakdown-description-parsed-html"]').text().trim();
+
+    // If missing, try to concatenate requirements and benefits for more context
     if (!description) {
-      // Fallback: try common selectors
+      const requirements = $('[data-ui="job-breakdown-requirements-parsed-html"]').text().trim();
+      const benefits = $('[data-ui="job-breakdown-benefits-parsed-html"]').text().trim();
+      description = [description, requirements, benefits].filter(Boolean).join('\n\n');
+    }
+
+    // Fallback: try old selectors
+    if (!description) {
+      description = $('.section--text').text().trim();
+    }
+    if (!description) {
       description = $('[data-qa="job-description"], .job-description, .description, main').text().trim();
     }
-    // Fallback: get all <p> tags inside main content
     if (!description) {
       description = $('main p').map((_, el) => $(el).text()).get().join('\n').trim();
     }

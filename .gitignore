@@ -8,3 +8,6 @@ vite.config.ts.*
 # secrets
 .env
 **/.claude/settings.local.json
+
+# examples
+example-job.html
