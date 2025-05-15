@@ -26,14 +26,14 @@ const app: Express = express();
 
 // --- CORS Configuration & Handling ---
 const configuredOrigin = process.env.ALLOWED_ORIGIN;
-log(
-  `[CORS DEBUG] Value of process.env.ALLOWED_ORIGIN from Railway env: "${configuredOrigin}"`
-);
+// log(
+//   `[CORS DEBUG] Value of process.env.ALLOWED_ORIGIN from Railway env: "${configuredOrigin}"`
+// );
 
 const corsOriginToUse = configuredOrigin || "*"; // This should resolve to your Vercel URL
-log(
-  `[CORS DEBUG] Effective origin value being used for CORS: "${corsOriginToUse}"`
-);
+// log(
+//   `[CORS DEBUG] Effective origin value being used for CORS: "${corsOriginToUse}"`
+// );
 
 const corsOptionsForActualRequests = {
   origin: corsOriginToUse,
@@ -45,9 +45,9 @@ const corsOptionsForActualRequests = {
 // Explicitly handle ALL preflight OPTIONS requests MANUALLY.
 // This MUST come before any other routes or general middleware that might intercept OPTIONS.
 app.options("*", (req: Request, res: Response) => {
-  log(
-    `[MANUAL OPTIONS HANDLER *] Path: ${req.path}, Request Origin: ${req.headers.origin}`
-  );
+  // log(
+  //   `[MANUAL OPTIONS HANDLER *] Path: ${req.path}, Request Origin: ${req.headers.origin}`
+  // );
 
   // Check if the request origin is the one we want to allow for credentialed requests
   if (req.headers.origin === corsOriginToUse) {
@@ -62,18 +62,18 @@ app.options("*", (req: Request, res: Response) => {
       "Content-Type, Authorization, X-Requested-With"
     ); // Match client headers
     res.setHeader("Access-Control-Max-Age", "86400"); // Optional: Cache preflight result for 1 day
-    log(
-      "[MANUAL OPTIONS HANDLER *] Origin matched. Sending 204 with manual CORS headers."
-    );
+    // log(
+    //   "[MANUAL OPTIONS HANDLER *] Origin matched. Sending 204 with manual CORS headers."
+    // );
     res.sendStatus(204); // Send 204 No Content and end response
   } else {
     // If origin doesn't match, or it's an OPTIONS request not from an allowed origin,
     // send a simple 204 without permissive CORS headers, or a 403.
     // Sending 204 is often sufficient for OPTIONS to just "pass through" without erroring,
     // but the browser will still block the subsequent actual request if its origin isn't allowed.
-    log(
-      `[MANUAL OPTIONS HANDLER *] Origin mismatch or no origin. Req Origin: ${req.headers.origin}. Sending 204.`
-    );
+    // log(
+    //   `[MANUAL OPTIONS HANDLER *] Origin mismatch or no origin. Req Origin: ${req.headers.origin}. Sending 204.`
+    // );
     res.sendStatus(204);
   }
 });

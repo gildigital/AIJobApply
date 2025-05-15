@@ -29,7 +29,7 @@ export function registerPlaywrightTestRoutes(app: Express) {
         playwrightUrl = `https://${playwrightUrl}`;
       }
       
-      console.log(`Using Playwright worker at: ${playwrightUrl}`);
+      console.log(`Using Playwright worker.`);
       
       // Call the Playwright worker to take a screenshot
       const response = await fetch(`${playwrightUrl}/screenshot`, {
@@ -105,7 +105,7 @@ export function registerPlaywrightTestRoutes(app: Express) {
         playwrightUrl = `https://${playwrightUrl}`;
       }
       
-      console.log(`Using Playwright worker at: ${playwrightUrl}`);
+      console.log(`Using Playwright worker.`);
       
       // Call the Playwright worker to fetch HTML
       const response = await fetch(`${playwrightUrl}/content`, {

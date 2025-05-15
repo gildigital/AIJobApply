@@ -2,7 +2,7 @@ import express, { type Express } from "express";
 import fs from "fs";
 import path from "path";
 import { type Server } from "http";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { dirname } from "path";
 import { nanoid } from "nanoid";
 
@@ -26,8 +26,10 @@ export async function setupVite(app: Express, server: Server) {
   }
 
   const { createServer: createViteServer, createLogger } = await import("vite");
-  const { default: viteConfig } = await import("../vite.config.ts");
-
+  const viteConfigPath = pathToFileURL(
+    path.resolve(__dirname, "../vite.config.ts")
+  ).href;
+  const { default: viteConfig } = await import(viteConfigPath);
   const viteLogger = createLogger();
   const serverOptions = {
     middlewareMode: true,
