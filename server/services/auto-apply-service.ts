@@ -134,6 +134,26 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
 
     // Process each job
     for (const job of jobs) {
+      // Fetch the latest user record before each job to check the current isAutoApplyEnabled flag
+      const latestUser = await storage.getUser(userId);
+      if (!latestUser) {
+        await createAutoApplyLog({
+          userId,
+          status: "Error",
+          message: "User not found during job processing"
+        });
+        return;
+      }
+      if (!latestUser.isAutoApplyEnabled) {
+        await createAutoApplyLog({
+          userId,
+          status: "Stopped",
+          message: `Auto-apply stopped: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`
+        });
+        console.log(`Auto-apply stopped for user ${userId}: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`);
+        return;
+      }
+
       // Stop if we've reached the limit
       if (applicationsSubmitted >= maxApplications) {
         await createAutoApplyLog({
