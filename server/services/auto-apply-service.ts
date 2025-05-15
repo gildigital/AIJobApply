@@ -2,6 +2,7 @@ import { db } from "../db.js";
 import { jobTracker, autoApplyLogs, users, InsertJobTracker, InsertAutoApplyLog } from "@shared/schema.js";
 import { eq, and, gte, sql, or } from "drizzle-orm";
 import { storage } from "../storage.js";
+import { fetchJobDescription } from "./job-description-scraper.js";
 
 /**
  * Import the Workable job functions - use the integrated version that supports both
@@ -154,6 +155,13 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
         continue;
       }
 
+      // Ensure job.description is present before scoring
+      if (!job.description || job.description.trim().length < 30) {
+        const desc = await fetchJobDescription(job.applyUrl);
+        if (desc && desc.length > 0) {
+          job.description = desc;
+        }
+      }
       // Score the job fit
       const score = await scoreJobFit(user, job);
       
@@ -324,12 +332,12 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
     
     // Filter out excluded companies if specified
     if (profile?.excludedCompanies && profile.excludedCompanies.length > 0) {
-      const excludedCompanies = profile.excludedCompanies.map(c => c.toLowerCase());
+      const excludedCompanies = profile.excludedCompanies.map((c: string) => c.toLowerCase());
       
       const filteredJobs = workableJobs.filter(job => {
         // If company name is in the excluded list, filter it out
         const companyName = job.company?.toLowerCase() || '';
-        return !excludedCompanies.some(excluded => companyName.includes(excluded));
+        return !excludedCompanies.some((excluded: string) => companyName.includes(excluded));
       });
       
       console.log(`Filtered out ${workableJobs.length - filteredJobs.length} jobs from excluded companies`);
