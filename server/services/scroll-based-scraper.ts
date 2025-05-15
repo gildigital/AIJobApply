@@ -190,7 +190,7 @@ export class ScrollBasedScraper {
           const payload = {
             url: correctedUrl,
             scroll: true,
-            maxScrolls: 10,
+            maxScrolls: 50,
             selector: '[data-ui="job-item"] a[href*="/view/"]',
           };
   

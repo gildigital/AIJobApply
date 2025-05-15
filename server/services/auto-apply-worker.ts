@@ -246,7 +246,7 @@ async function processJob(queuedJob: JobQueue): Promise<void> {
 
     // Check daily limits
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     const appliedToday = await storage.getJobsAppliedToday(user.id, today);
     const userPlan = user.subscriptionPlan || "FREE";
     const userDailyLimit =
@@ -453,7 +453,7 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
 
     // Get completed and failed jobs from today
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     const appliedToday = await storage.getJobsAppliedToday(userId, today);
 
     // Get user's plan limit
@@ -467,7 +467,7 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
 
     // Calculate when the daily counter resets (midnight tonight)
     const resetTime = new Date();
-    resetTime.setHours(24, 0, 0, 0); // Set to midnight tonight
+    resetTime.setUTCHours(24, 0, 0, 0); // Set to midnight tonight
 
     // Determine if we're in standby mode (daily limit reached AND have standby jobs)
     const isInStandbyMode = remainingApplications <= 0 && standby > 0;

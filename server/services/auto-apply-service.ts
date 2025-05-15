@@ -905,7 +905,7 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
   
   // Get the count of applied jobs today
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  today.setUTCHours(0, 0, 0, 0);
   
   const [appliedJobsCount] = await db
     .select({ count: sql<number>`count(*)` })

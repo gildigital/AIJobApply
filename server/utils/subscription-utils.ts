@@ -53,7 +53,7 @@ export async function checkSubscriptionAccess(userId: number): Promise<Subscript
     // Check daily application limit
     // First, count how many applications were made today
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     
     // Get jobs applied today
     const appliedToday = await storage.getJobsAppliedToday(userId, today);
@@ -106,7 +106,7 @@ export async function getRemainingApplications(userId: number): Promise<number> 
     
     // Get jobs applied today
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     const appliedToday = await storage.getJobsAppliedToday(userId, today);
     
     // Calculate remaining
