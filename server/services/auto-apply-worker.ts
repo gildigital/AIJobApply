@@ -160,7 +160,7 @@ async function checkAndReactivateStandbyJobs(): Promise<void> {
 
       // Check if user has available application slots today
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      today.setUTCHours(0, 0, 0, 0);
       const appliedToday = await storage.getJobsAppliedToday(userId, today);
 
       // Get user's plan details
