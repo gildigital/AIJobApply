@@ -29,6 +29,9 @@ const limiterConfig = {
   reservoirRefreshInterval: 60 * 1000, // 1 minute
 };
 
+// Declare BACKEND_URL at the top of the file so it is available for use in all functions
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
+
 /**
  * ScrollBasedScraper - A modernized scraper using infinite scrolling for Workable job listings
  */
@@ -91,7 +94,7 @@ export class ScrollBasedScraper {
     }, timeoutMs);
 
     try {
-      const apiUrl = `http://localhost:5000/api/workable/direct-fetch?url=${encodeURIComponent(url)}`;
+      const apiUrl = `${BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(url)}`;
 
       const response = await fetch(apiUrl, {
         signal,

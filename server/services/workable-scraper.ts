@@ -69,6 +69,8 @@ interface SearchState {
   [key: string]: any; // Allow dynamic properties like 'empty_pages_query'
 }
 
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
+
 export class WorkableScraper {
   private readonly BASE_URL = "https://jobs.workable.com/search";
   private searchStates: Map<string, SearchState> = new Map();
@@ -584,7 +586,7 @@ export class WorkableScraper {
       const additionalTitles = defaultTitles.filter(
         (title) =>
           !jobTitles.some(
-            (userTitle) =>
+            (userTitle: string) =>
               userTitle.toLowerCase().includes(title.toLowerCase()) ||
               title.toLowerCase().includes(userTitle.toLowerCase())
           )
@@ -639,7 +641,7 @@ export class WorkableScraper {
         };
 
         // For each experience level the user is interested in, create a URL with that filter
-        profile.jobExperienceLevel.forEach((level) => {
+        profile.jobExperienceLevel.forEach((level: string) => {
           const workableLevel = workableExperienceLevels[level];
           if (workableLevel) {
             const url = new URL(baseUrl);
@@ -660,7 +662,7 @@ export class WorkableScraper {
   async fetchJobDetails(url: string): Promise<WorkableJob | null> {
     try {
       // Use our direct fetch API to get job details
-      const apiUrl = `http://localhost:5000/api/workable/direct-fetch?url=${encodeURIComponent(
+      const apiUrl = `${BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(
         url
       )}`;
 
@@ -705,7 +707,7 @@ export class WorkableScraper {
         `Fetching job details for ${url} with timeout ${timeoutMs}ms`
       );
       // Use our direct fetch API endpoint
-      const apiUrl = `http://localhost:5000/api/workable/direct-fetch?url=${encodeURIComponent(
+      const apiUrl = `${BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(
         url
       )}`;
 
@@ -2148,6 +2150,7 @@ export class WorkableScraper {
           if (savedState.searchUrls.length > 0) {
             // Get top 3 URLs by priority
             const topUrls = [...savedState.searchUrls]
+             
               .sort((a, b) => b.priority - a.priority)
               .slice(0, 3);
 
