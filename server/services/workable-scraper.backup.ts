@@ -69,7 +69,7 @@ interface SearchState {
   [key: string]: any; // Allow dynamic properties like 'empty_pages_query'
 }
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:5000";
+const VITE_BACKEND_URL = process.env.VITE_BACKEND_URL || "http://localhost:5000";
 
 export class WorkableScraper {
   private readonly BASE_URL = "https://jobs.workable.com/search";
@@ -590,7 +590,7 @@ export class WorkableScraper {
   async fetchJobDetails(url: string): Promise<WorkableJob | null> {
     try {
       // Use our direct fetch API to get job details
-      const apiUrl = `${BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(url)}`;
+      const apiUrl = `${VITE_BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(url)}`;
 
       const response = await fetch(apiUrl);
       if (!response.ok) {
@@ -633,7 +633,7 @@ export class WorkableScraper {
         `Fetching job details for ${url} with timeout ${timeoutMs}ms`,
       );
       // Use our direct fetch API endpoint
-      const apiUrl = `${BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(url)}`;
+      const apiUrl = `${VITE_BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(url)}`;
 
       const response = await fetch(apiUrl, {
         signal, // Pass the AbortSignal to fetch
