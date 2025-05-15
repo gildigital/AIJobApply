@@ -19,6 +19,7 @@
   "dependencies": {
     "@neondatabase/serverless": "^0.9.0",
     "bottleneck": "^2.19.5",
+    "cheerio": "^1.0.0",
     "connect-pg-simple": "^9.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
