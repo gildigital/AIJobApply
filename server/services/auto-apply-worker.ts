@@ -494,7 +494,8 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
 
     return {
       currentStatus,
-      isAutoApplyEnabled: isWorkerRunning, // Worker state variable from the module
+      isWorkerRunning, // Worker state variable from the module
+      isAutoApplyEnabled: user?.isAutoApplyEnabled ?? false,
       isInStandbyMode,
       queuedJobs: pending + processing,
       standbyJobs: standby,
