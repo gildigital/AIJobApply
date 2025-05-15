@@ -884,6 +884,8 @@ async function generateCoverLetter(
       resumeText,
       profile || {},
       job.description,
+      job.company,
+      job.jobTitle
     );
     if (aiCoverLetter) {
       return aiCoverLetter;

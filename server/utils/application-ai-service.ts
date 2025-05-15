@@ -315,39 +315,38 @@ export async function generateApplicationAnswer(
 
 /**
  * Generate a cover letter based on user profile and job description
- * 
+ * Now accepts explicit company and jobTitle fields (preferred over extraction)
+ *
  * @param resumeText The user's resume text
  * @param userProfile The user's profile information
  * @param jobDescription The job description
+ * @param company (optional) The company name (preferred)
+ * @param jobTitle (optional) The job title (preferred)
  * @returns Promise resolving to a generated cover letter
  */
 export async function generateCoverLetter(
   resumeText: string,
   userProfile: any,
-  jobDescription: string
+  jobDescription: string,
+  company?: string,
+  jobTitle?: string
 ): Promise<string> {
   // Try OpenAI first if key is available
   if (OPENAI_API_KEY) {
     try {
-      return await generateCoverLetterWithOpenAI(resumeText, userProfile, jobDescription);
+      return await generateCoverLetterWithOpenAI(resumeText, userProfile, jobDescription, company, jobTitle);
     } catch (error) {
       console.error("Error with OpenAI cover letter generation:", error);
-      
       // If Anthropic is available, try it as fallback
       if (ANTHROPIC_API_KEY) {
-        return await generateCoverLetterWithAnthropic(resumeText, userProfile, jobDescription);
+        return await generateCoverLetterWithAnthropic(resumeText, userProfile, jobDescription, company, jobTitle);
       }
-      
       // If no AI services available, return a generic cover letter
       return getGenericCoverLetter(userProfile, jobDescription);
     }
-  } 
-  // If no OpenAI key but Anthropic is available, use Anthropic
-  else if (ANTHROPIC_API_KEY) {
-    return await generateCoverLetterWithAnthropic(resumeText, userProfile, jobDescription);
-  } 
-  // If no AI services are available, return a generic cover letter
-  else {
+  } else if (ANTHROPIC_API_KEY) {
+    return await generateCoverLetterWithAnthropic(resumeText, userProfile, jobDescription, company, jobTitle);
+  } else {
     return getGenericCoverLetter(userProfile, jobDescription);
   }
 }
@@ -534,19 +533,20 @@ Please provide a professional answer to this application question.`;
 
 /**
  * Generate a cover letter using OpenAI
+ * Now accepts explicit company and jobTitle fields (preferred over extraction)
  */
 async function generateCoverLetterWithOpenAI(
-  resumeText: string, 
-  userProfile: any, 
-  jobDescription: string
+  resumeText: string,
+  userProfile: any,
+  jobDescription: string,
+  company?: string,
+  jobTitle?: string
 ): Promise<string> {
   // Build a compact user profile summary
   const profileSummary = buildProfileSummary(userProfile);
-  
-  // Company and job title from the job description
-  const jobTitle = extractJobTitle(jobDescription);
-  const company = extractCompany(jobDescription);
-  
+  // Prefer explicit fields, fallback to extraction
+  const jobTitleFinal = jobTitle || extractJobTitle(jobDescription);
+  const companyFinal = company || extractCompany(jobDescription);
   // Define the prompt
   const systemPrompt = `You are an expert cover letter writer. Create a concise, compelling cover letter that:
 
@@ -559,24 +559,7 @@ async function generateCoverLetterWithOpenAI(
 7. IMPORTANT: If you don't have specific information, use generalized statements rather than placeholders
 
 Return ONLY the cover letter text, without explanations. Do not include date, address, or signature lines.`;
-
-  const userPrompt = `# JOB TITLE: 
-${jobTitle || "The open position"}
-
-# COMPANY:
-${company || "The company"}
-
-# RESUME EXCERPT:
-${resumeText.substring(0, 1500)}
-
-# USER PROFILE:
-${profileSummary}
-
-# JOB DESCRIPTION EXCERPT:
-${jobDescription.substring(0, 1000)}
-
-Please write a concise, compelling cover letter.`;
-
+  const userPrompt = `# JOB TITLE: \n${jobTitleFinal || "The open position"}\n\n# COMPANY:\n${companyFinal || "The company"}\n\n# RESUME EXCERPT:\n${resumeText.substring(0, 1500)}\n\n# USER PROFILE:\n${profileSummary}\n\n# JOB DESCRIPTION EXCERPT:\n${jobDescription.substring(0, 1000)}\n\nPlease write a concise, compelling cover letter.`;
   // Make the API request to OpenAI
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -594,31 +577,30 @@ Please write a concise, compelling cover letter.`;
       max_tokens: 700
     })
   });
-
   if (!response.ok) {
     const errorData = await response.text();
     throw new Error(`OpenAI API error: ${response.status} ${errorData}`);
   }
-
   const data = await response.json();
   return data.choices[0].message.content.trim();
 }
 
 /**
  * Generate a cover letter using Anthropic
+ * Now accepts explicit company and jobTitle fields (preferred over extraction)
  */
 async function generateCoverLetterWithAnthropic(
-  resumeText: string, 
-  userProfile: any, 
-  jobDescription: string
+  resumeText: string,
+  userProfile: any,
+  jobDescription: string,
+  company?: string,
+  jobTitle?: string
 ): Promise<string> {
   // Build a compact user profile summary
   const profileSummary = buildProfileSummary(userProfile);
-  
-  // Company and job title from the job description
-  const jobTitle = extractJobTitle(jobDescription);
-  const company = extractCompany(jobDescription);
-  
+  // Prefer explicit fields, fallback to extraction
+  const jobTitleFinal = jobTitle || extractJobTitle(jobDescription);
+  const companyFinal = company || extractCompany(jobDescription);
   // Define the prompt
   const prompt = `
 <instructions>
@@ -636,23 +618,7 @@ You are an expert cover letter writer. Create a concise, compelling cover letter
 Return ONLY the cover letter text, without explanations. Do not include date, address, or signature lines.
 </instructions>
 
-# JOB TITLE: 
-${jobTitle || "The open position"}
-
-# COMPANY:
-${company || "The company"}
-
-# RESUME EXCERPT:
-${resumeText.substring(0, 1500)}
-
-# USER PROFILE:
-${profileSummary}
-
-# JOB DESCRIPTION EXCERPT:
-${jobDescription.substring(0, 1000)}
-
-Please write a concise, compelling cover letter.`;
-
+# JOB TITLE: \n${jobTitleFinal || "The open position"}\n\n# COMPANY:\n${companyFinal || "The company"}\n\n# RESUME EXCERPT:\n${resumeText.substring(0, 1500)}\n\n# USER PROFILE:\n${profileSummary}\n\n# JOB DESCRIPTION EXCERPT:\n${jobDescription.substring(0, 1000)}\n\nPlease write a concise, compelling cover letter.`;
   // Make the API request to Anthropic
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -662,7 +628,7 @@ Please write a concise, compelling cover letter.`;
       "anthropic-version": "2023-06-01"
     } as HeadersInit,
     body: JSON.stringify({
-      model: "claude-3-7-sonnet-20250219", // the newest Anthropic model is "claude-3-7-sonnet-20250219" which was released February 24, 2025
+      model: "claude-3-7-sonnet-20250219",
       max_tokens: 700,
       system: "You write professional cover letters based on user profiles and job descriptions. Never use placeholders in your responses - always use concrete details or general statements.",
       messages: [
@@ -670,15 +636,12 @@ Please write a concise, compelling cover letter.`;
       ]
     })
   });
-
   if (!response.ok) {
     const errorData = await response.text();
     throw new Error(`Anthropic API error: ${response.status} ${errorData}`);
   }
-
   const data = await response.json();
   const content = data.content[0].text;
-  
   return content.trim();
 }
 

@@ -1628,20 +1628,37 @@ export class WorkableScraper {
           }
         }
 
-        // Extract company name - trying multiple patterns
-        const companyRegexes = [
-          /<div[^>]*class="[^"]*company[^"]*"[^>]*>(.*?)<\/div>/i,
-          /<span[^>]*class="[^"]*company[^"]*"[^>]*>(.*?)<\/span>/i,
-          /at\s+<strong>(.*?)<\/strong>/i,
-          /<title>.*?\s+at\s+(.*?)(?:\s*-\s*.*?)*<\/title>/i,
-          /<meta\s+property="og:site_name"\s+content="([^"]*)">/i,
-        ];
-
-        for (const regex of companyRegexes) {
-          const match = regex.exec(pageHtml);
-          if (match) {
-            company = match[1].trim();
-            break;
+        // Extract company name - prefer <a> inside <h2 data-ui="overview-company">
+        let companyExtracted = false;
+        const overviewCompanyMatch = pageHtml.match(
+          /<h2[^>]*data-ui=["']overview-company["'][^>]*>[\s\S]*?<a[^>]*>(.*?)<\/a>[\s\S]*?<\/h2>/i
+        );
+        if (overviewCompanyMatch && overviewCompanyMatch[1]) {
+          const candidate = overviewCompanyMatch[1].trim();
+          // Avoid extracting button/link text like 'view'
+          if (candidate && candidate.toLowerCase() !== 'view') {
+            company = candidate;
+            companyExtracted = true;
+          }
+        }
+        // Fallback to previous regexes if not found
+        if (!companyExtracted) {
+          const companyRegexes = [
+            /<div[^>]*class="[^"]*company[^"]*"[^>]*>(.*?)<\/div>/i,
+            /<span[^>]*class="[^"]*company[^"]*"[^>]*>(.*?)<\/span>/i,
+            /at\s+<strong>(.*?)<\/strong>/i,
+            /<title>.*?\s+at\s+(.*?)(?:\s*-\s*.*?)*<\/title>/i,
+            /<meta\s+property="og:site_name"\s+content="([^"]*)">/i,
+          ];
+          for (const regex of companyRegexes) {
+            const match = regex.exec(pageHtml);
+            if (match) {
+              const candidate = match[1].trim();
+              if (candidate && candidate.toLowerCase() !== 'view') {
+                company = candidate;
+                break;
+              }
+            }
           }
         }
 
