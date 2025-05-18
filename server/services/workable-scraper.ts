@@ -1255,8 +1255,10 @@ export class WorkableScraper {
       }
 
       // Process more jobs at once to avoid missing potential matches
-      const MAX_JOBS_PER_PAGE = 200; // Increased from 20 to 200 to match our other limits
-      const jobsToProcess = newLinks.slice(0, MAX_JOBS_PER_PAGE);
+      // const MAX_JOBS_PER_PAGE = 200; // Increased from 20 to 200 to match our other limits
+      // const jobsToProcess = newLinks.slice(0, MAX_JOBS_PER_PAGE);
+      // Instead, process all new jobs found on the page
+      const jobsToProcess = newLinks;
 
       // Handle case of no new jobs on this page
       if (jobsToProcess.length === 0) {
@@ -2136,7 +2138,7 @@ export class WorkableScraper {
         JSON.stringify({
           pageSize,
           maxInitialJobs,
-          searchDepth,
+                   searchDepth,
           hasContinueToken: !!continueToken,
           workplace,
           remote,
