@@ -738,13 +738,94 @@ export async function submitWorkableApplication(
         : formDataString,
     );
 
-    const response = await fetch(`${completeWorkerUrl}/submit`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+    // Implement a more robust progression of timeouts
+    const MAX_RETRIES = 4; // Increase max retries
+    const TIMEOUT_PROGRESSION = [90000, 180000, 300000, 480000]; // 1.5, 3, 5, 8 minutes
+    
+    let retryCount = 0;
+    let response = null;
+    let lastError = null;
+    
+    while (retryCount <= MAX_RETRIES) {
+      try {
+        // Get the appropriate timeout for this attempt (use the last one if we're beyond the array)
+        const timeoutMs = TIMEOUT_PROGRESSION[Math.min(retryCount, TIMEOUT_PROGRESSION.length - 1)];
+        console.log(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1} to submit application to Playwright worker (timeout: ${timeoutMs/1000}s)`);
+        
+        // Use AbortController to implement timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        
+        response = await fetch(`${completeWorkerUrl}/submit`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        
+        // Clear timeout if the request completes
+        clearTimeout(timeoutId);
+        
+        // If we got here, the request was successful (no timeout)
+        console.log(`✅ Attempt ${retryCount + 1} succeeded! Got response with status: ${response.status}`);
+        break;
+      } catch (error) {
+        lastError = error;
+        retryCount++;
+        
+        // Log the error but don't fail yet if we have retries left
+        console.error(`Fetch attempt ${retryCount}/${MAX_RETRIES + 1} failed with error:`, error);
+        
+        // Check if we've used all retries
+        if (retryCount > MAX_RETRIES) {
+          console.error(`All ${MAX_RETRIES + 1} submission attempts failed, giving up.`);
+          console.log("IMPORTANT: This may be a false negative - the application might have succeeded but the connection timed out");
+          
+          // When giving up, make a quick status check to see if the job was applied to
+          try {
+            console.log(`Making a final lightweight status check to verify if the application completed...`);
+            const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
+              method: "GET",
+              timeout: 5000, // Quick check
+            }).catch(e => null);
+            
+            if (statusResponse && statusResponse.ok) {
+              const status = await statusResponse.json();
+              console.log(`Status check result:`, status);
+              
+              // If the status shows the worker is idle, job might have completed successfully
+              if (status && status.idle && status.lastJobSuccessful) {
+                console.log(`⚠️ Status check indicates the worker is idle and last job was successful!`);
+                console.log(`⚠️ Application might have actually succeeded despite the timeout failure`);
+                
+                // Return success to prevent marking the job as failed
+                return "success";
+              }
+            }
+          } catch (statusError) {
+            console.error(`Status check failed:`, statusError);
+          }
+          
+          // If we get here, we have no evidence that the job succeeded
+          throw lastError;
+        }
+        
+        // If the error is a timeout or other network error, retry
+        if (error.name === 'AbortError' || 
+            error.name === 'HeadersTimeoutError' || 
+            error.code === 'UND_ERR_HEADERS_TIMEOUT' ||
+            error.message?.includes('timeout')) {
+          console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
+          // Wait 5 seconds before retrying
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        } else {
+          // For non-timeout errors, just re-throw
+          throw error;
+        }
+      }
+    }
 
     if (!response.ok) {
       console.error(
@@ -796,6 +877,11 @@ export async function submitWorkableApplication(
     if (contentType.includes('application/json')) {
       // Normal JSON response
       result = await response.json();
+      
+      // Add detailed logging for troubleshooting
+      console.log(`[WORKABLE-DEBUG] Raw response from Playwright worker: ${JSON.stringify(result)}`);
+      console.log(`[WORKABLE-DEBUG] Status type: ${typeof result.status}, Value: "${result.status}"`);
+      console.log(`[WORKABLE-DEBUG] Full response keys: ${Object.keys(result).join(', ')}`);
     } else {
       // Handle HTML or other non-JSON responses (typically 500 errors or redirects)
       const responseText = await response.text();
@@ -837,18 +923,31 @@ ${failedFields.map((field: any) =>
       }
     }
     
-    if (result.status === "success") {
+    // Add detailed logging to investigate the status comparison
+    console.log(`[WORKABLE-DEBUG] Comparing status: "${result.status}" (${typeof result.status})`);
+    console.log(`[WORKABLE-DEBUG] Status strict equality check: result.status === "success" = ${result.status === "success"}`);
+    console.log(`[WORKABLE-DEBUG] Status string check: result.status.toString() === "success" = ${result.status.toString() === "success"}`);
+    console.log(`[WORKABLE-DEBUG] Status trim check: result.status.trim() === "success" = ${result.status.trim ? result.status.trim() === "success" : "N/A"}`);
+    
+    // Check for additional success indicators
+    console.log(`[WORKABLE-DEBUG] Additional success flags present: success_flag=${!!result.success_flag}, result=${result.result}`);
+    
+    // Modified condition to check multiple success indicators
+    if (result.status === "success" || result.success_flag === true || result.result === "success") {
       console.log(
-        `Application successfully submitted for ${job.jobTitle} at ${job.company}`,
+        `✅ Application successfully submitted for ${job.jobTitle} at ${job.company}`,
       );
+      console.log(`[WORKABLE-DEBUG] Returning 'success' to auto-apply-service`);
       return "success";
     } else if (result.status === "skipped") {
       console.log(
-        `Application skipped: ${result.message || "No reason provided"}`,
+        `⏭️ Application skipped: ${result.message || "No reason provided"}`,
       );
+      console.log(`[WORKABLE-DEBUG] Returning 'skipped' to auto-apply-service`);
       return "skipped";
     } else {
-      console.error(`Unexpected result status: ${result.status}`);
+      console.error(`❌ Unexpected result status: ${result.status}`);
+      console.log(`[WORKABLE-DEBUG] Returning 'error' to auto-apply-service`);
       return "error";
     }
   } catch (error) {

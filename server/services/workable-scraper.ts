@@ -69,7 +69,8 @@ interface SearchState {
   [key: string]: any; // Allow dynamic properties like 'empty_pages_query'
 }
 
-const VITE_BACKEND_URL = process.env.VITE_BACKEND_URL || "http://localhost:5000";
+const VITE_BACKEND_URL =
+  process.env.VITE_BACKEND_URL || "http://localhost:5000";
 
 export class WorkableScraper {
   private readonly BASE_URL = "https://jobs.workable.com/search";
@@ -704,7 +705,7 @@ export class WorkableScraper {
 
     try {
       console.log(
-        `Fetching job details for ${url} with timeout ${timeoutMs}ms`
+        `Workspaceing job details for ${url} with timeout ${timeoutMs}ms`
       );
       // Use our direct fetch API endpoint
       const apiUrl = `${VITE_BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(
@@ -756,7 +757,7 @@ export class WorkableScraper {
 
       if (error.name === "AbortError") {
         // This specific error is thrown when controller.abort() is called
-        console.warn(`Fetch aborted for ${url} due to timeout.`);
+        console.warn(`Workspace aborted for ${url} due to timeout.`);
       } else {
         // Log other potential errors (network issues, JSON parsing errors, etc.)
         console.error(`Error fetching job details for ${url}:`, error.message);
@@ -1031,7 +1032,7 @@ export class WorkableScraper {
       // Extract current page from URL or default to 1
       const currentPage = parseInt(urlObj.searchParams.get("page") || "1", 10);
       console.log(
-        `Fetching job listings from: ${searchUrl}${
+        `Workspaceing job listings from: ${searchUrl}${
           useDirectFetch ? " (using direct fetch method)" : ""
         }`
       );
@@ -1330,7 +1331,7 @@ export class WorkableScraper {
 
       // Fetch job details concurrently
       console.log(
-        `Fetching details for ${jobsToProcess.length} jobs concurrently...`
+        `Workspaceing details for ${jobsToProcess.length} jobs concurrently...`
       );
 
       // Create array of promises, each fetching job details
@@ -1638,7 +1639,7 @@ export class WorkableScraper {
         if (overviewCompanyMatch && overviewCompanyMatch[1]) {
           const candidate = overviewCompanyMatch[1].trim();
           // Avoid extracting button/link text like 'view'
-          if (candidate && candidate.toLowerCase() !== 'view') {
+          if (candidate && candidate.toLowerCase() !== "view") {
             company = candidate;
             companyExtracted = true;
           }
@@ -1656,7 +1657,7 @@ export class WorkableScraper {
             const match = regex.exec(pageHtml);
             if (match) {
               const candidate = match[1].trim();
-              if (candidate && candidate.toLowerCase() !== 'view') {
+              if (candidate && candidate.toLowerCase() !== "view") {
                 company = candidate;
                 break;
               }
@@ -2138,7 +2139,7 @@ export class WorkableScraper {
         JSON.stringify({
           pageSize,
           maxInitialJobs,
-                   searchDepth,
+          searchDepth,
           hasContinueToken: !!continueToken,
           workplace,
           remote,
@@ -2169,7 +2170,7 @@ export class WorkableScraper {
           if (savedState.searchUrls.length > 0) {
             // Get top 3 URLs by priority
             const topUrls = [...savedState.searchUrls]
-             
+
               .sort((a, b) => b.priority - a.priority)
               .slice(0, 3);
 
@@ -2249,12 +2250,45 @@ export class WorkableScraper {
       });
 
       // Sort jobs by match score (if available)
-      const sortedJobs = result.jobs.sort((a, b) => {
+      let sortedJobs: JobListing[] = result.jobs.sort((a, b) => {
         // Sort by match score (higher first)
         if (a.matchScore !== undefined && b.matchScore !== undefined) {
           return b.matchScore - a.matchScore;
         }
         return 0;
+      });
+
+      // Filter out jobs already applied to by the user (optimized deduplication)
+      const appliedJobs = await storage.getJobs(userId);
+      const appliedLinks = new Set(
+        appliedJobs
+          .filter(
+            (j) =>
+              (j.status && j.status.toLowerCase() === "applied") ||
+              (j.applicationStatus &&
+                ["applied", "submitted"].includes(
+                  j.applicationStatus.toLowerCase()
+                ))
+          )
+          .map((j) => j.link)
+      );
+      const appliedExternalIds = new Set(
+        appliedJobs
+          .filter(
+            (j) =>
+              (j.status && j.status.toLowerCase() === "applied") ||
+              (j.applicationStatus &&
+                ["applied", "submitted"].includes(
+                  j.applicationStatus.toLowerCase()
+                ))
+          )
+          .map((j) => j.externalJobId)
+      );
+      sortedJobs = sortedJobs.filter((job: JobListing) => {
+        const linkMatch = job.applyUrl && appliedLinks.has(job.applyUrl);
+        const idMatch =
+          job.externalJobId && appliedExternalIds.has(job.externalJobId);
+        return !linkMatch && !idMatch;
       });
 
       // Generate continue token if there are more results

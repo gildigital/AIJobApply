@@ -208,22 +208,26 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
           let message = `Evaluating application to ${job.company} - ${job.jobTitle}`;
           
           // Handle different submission results
+          console.log(`[AUTO-APPLY-DEBUG] Got result '${result}' from workable-application.ts`);
           switch (result) {
             case "success":
               status = "Applied";
               applicationStatus = "applied";
               message = `Successfully applied to ${job.company} - ${job.jobTitle}`;
               applicationsSubmitted++;
+              console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
               break;
             case "skipped":
               status = "Saved";
               applicationStatus = "skipped";
               message = `Skipped ${job.company} - ${job.jobTitle} due to unsupported application process`;
+              console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
               break;
             case "error":
               status = "Failed";
               applicationStatus = "failed";
               message = `Failed to apply to ${job.company} - ${job.jobTitle}`;
+              console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
               break;
           }
           
@@ -237,6 +241,9 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
             applicationStatus // Pass the application status
           );
           
+          // Add detailed logging before creating the log
+          console.log(`[AUTO-APPLY-DEBUG] Creating log entry with status: ${result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed")}`);
+          
           // Log the application attempt
           await createAutoApplyLog({
             userId,
@@ -244,6 +251,8 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
             status: result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed"),
             message
           });
+          
+          console.log(`[AUTO-APPLY-DEBUG] Log entry created with message: ${message}`);
           
           // Add a small delay between applications to avoid rate limiting
           await new Promise(resolve => setTimeout(resolve, 2000));
@@ -714,14 +723,95 @@ async function submitApplicationToPlaywright(
                 JSON.stringify(payloadForLogging, null, 2).substring(0, 1000) + 
                 (JSON.stringify(payloadForLogging, null, 2).length > 1000 ? "... [truncated]" : ""));
     
-    const response = await fetch(`${completeWorkerUrl}/submit`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        // Add authentication if required
-      },
-      body: JSON.stringify(payload)
-    });
+    // Implement a more robust progression of timeouts
+    const MAX_RETRIES = 4; // Increase max retries
+    const TIMEOUT_PROGRESSION = [90000, 180000, 300000, 480000]; // 1.5, 3, 5, 8 minutes
+    
+    let retryCount = 0;
+    let response = null;
+    let lastError = null;
+    
+    while (retryCount <= MAX_RETRIES) {
+      try {
+        // Get the appropriate timeout for this attempt (use the last one if we're beyond the array)
+        const timeoutMs = TIMEOUT_PROGRESSION[Math.min(retryCount, TIMEOUT_PROGRESSION.length - 1)];
+        console.log(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1} to submit application to Playwright worker (timeout: ${timeoutMs/1000}s)`);
+        
+        // Use AbortController to implement timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        
+        response = await fetch(`${completeWorkerUrl}/submit`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            // Add authentication if required
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        
+        // Clear timeout if the request completes
+        clearTimeout(timeoutId);
+        
+        // If we got here, the request was successful (no timeout)
+        console.log(`✅ Attempt ${retryCount + 1} succeeded! Got response with status: ${response.status}`);
+        break;
+      } catch (error) {
+        lastError = error;
+        retryCount++;
+        
+        // Log the error but don't fail yet if we have retries left
+        console.error(`Fetch attempt ${retryCount}/${MAX_RETRIES + 1} failed with error:`, error);
+        
+        // Check if we've used all retries
+        if (retryCount > MAX_RETRIES) {
+          console.error(`All ${MAX_RETRIES + 1} submission attempts failed, giving up.`);
+          console.log("IMPORTANT: This may be a false negative - the application might have succeeded but the connection timed out");
+          
+          // When giving up, make a quick status check to see if the job was applied to
+          try {
+            console.log(`Making a final lightweight status check to verify if the application completed...`);
+            const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
+              method: "GET",
+              timeout: 5000, // Quick check
+            }).catch(e => null);
+            
+            if (statusResponse && statusResponse.ok) {
+              const status = await statusResponse.json();
+              console.log(`Status check result:`, status);
+              
+              // If the status shows the worker is idle, job might have completed successfully
+              if (status && status.idle && status.lastJobSuccessful) {
+                console.log(`⚠️ Status check indicates the worker is idle and last job was successful!`);
+                console.log(`⚠️ Application might have actually succeeded despite the timeout failure`);
+                
+                // Return success to prevent marking the job as failed
+                return "success";
+              }
+            }
+          } catch (statusError) {
+            console.error(`Status check failed:`, statusError);
+          }
+          
+          // If we get here, we have no evidence that the job succeeded
+          throw lastError;
+        }
+        
+        // If the error is a timeout or other network error, retry
+        if (error.name === 'AbortError' || 
+            error.name === 'HeadersTimeoutError' || 
+            error.code === 'UND_ERR_HEADERS_TIMEOUT' ||
+            error.message?.includes('timeout')) {
+          console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
+          // Wait 5 seconds before retrying
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        } else {
+          // For non-timeout errors, just re-throw
+          throw error;
+        }
+      }
+    }
     
     // Handle the response
     if (!response.ok) {
