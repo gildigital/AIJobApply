@@ -768,7 +768,31 @@ export async function submitWorkableApplication(
         // Clear timeout if the request completes
         clearTimeout(timeoutId);
         
-        // If we got here, the request was successful (no timeout)
+        // Handle 409 Conflict (duplicate job) as a special case
+        if (response.status === 409) {
+          try {
+            const conflictData = await response.json();
+            console.log(`⚠️ Job application already in progress: ${conflictData.message}`);
+            console.log(`⚠️ Existing request ID: ${conflictData.existingRequestId}, elapsed: ${Math.round(conflictData.elapsed/1000)}s`);
+            
+            // Instead of retrying immediately, wait a reasonable time and then try once more
+            if (retryCount === 0) {
+              console.log(`⏳ Waiting 60 seconds before making final attempt...`);
+              await new Promise(resolve => setTimeout(resolve, 60000));
+              retryCount++; // Skip to final attempt
+              continue;
+            } else {
+              // If this is not the first attempt, treat as a temporary failure
+              console.log(`⚠️ Job is still being processed by another request. Treating as temporary success to avoid false failures.`);
+              return "success"; // Return success to prevent marking job as failed
+            }
+          } catch (parseError) {
+            console.error("Error parsing conflict response:", parseError);
+            // Fall through to regular error handling
+          }
+        }
+        
+        // If we got here, the request was successful (no timeout or conflict)
         console.log(`✅ Attempt ${retryCount + 1} succeeded! Got response with status: ${response.status}`);
         break;
       } catch (error) {
