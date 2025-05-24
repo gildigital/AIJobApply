@@ -280,14 +280,14 @@ export class DatabaseStorage implements IStorage {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + 1);
     
-    // Get count of jobs with status 'applied' created today
+    // Get count of jobs with status 'Applied' created today
     const result = await db
       .select({ count: count() })
       .from(jobTracker)
       .where(
         and(
           eq(jobTracker.userId, userId),
-          eq(jobTracker.status, 'applied'),
+          eq(jobTracker.status, 'Applied'),
           gte(jobTracker.createdAt, startDate),
           lt(jobTracker.createdAt, endDate)
         )

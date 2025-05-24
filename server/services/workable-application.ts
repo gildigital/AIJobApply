@@ -791,8 +791,7 @@ export async function submitWorkableApplication(
                 console.log(`Making final status check to verify actual job completion...`);
                 const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
                   method: "GET",
-                  timeout: 5000,
-                }).catch(e => null);
+                }).catch(() => null);
                 
                 if (statusResponse && statusResponse.ok) {
                   const status = await statusResponse.json();
@@ -838,8 +837,7 @@ export async function submitWorkableApplication(
             console.log(`Making a final lightweight status check to verify if the application completed...`);
             const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
               method: "GET",
-              timeout: 5000, // Quick check
-            }).catch(e => null);
+            }).catch(() => null);
             
             if (statusResponse && statusResponse.ok) {
               const status = await statusResponse.json();
