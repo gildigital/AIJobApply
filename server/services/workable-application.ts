@@ -782,9 +782,35 @@ export async function submitWorkableApplication(
               retryCount++; // Skip to final attempt
               continue;
             } else {
-              // If this is not the first attempt, treat as a temporary failure
-              console.log(`⚠️ Job is still being processed by another request. Treating as temporary success to avoid false failures.`);
-              return "success"; // Return success to prevent marking job as failed
+              // Wait longer and check actual status instead of assuming success
+              console.log(`⚠️ Job still in progress. Waiting additional time to check actual completion...`);
+              await new Promise(resolve => setTimeout(resolve, 120000)); // Wait 2 more minutes
+              
+              // Make a final status check to get real results
+              try {
+                console.log(`Making final status check to verify actual job completion...`);
+                const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
+                  method: "GET",
+                  timeout: 5000,
+                }).catch(e => null);
+                
+                if (statusResponse && statusResponse.ok) {
+                  const status = await statusResponse.json();
+                  console.log(`Final status check result:`, status);
+                  
+                  if (status && status.lastJobSuccessful) {
+                    console.log(`✅ Status check confirms job completed successfully`);
+                    return "success";
+                  } else {
+                    console.log(`❌ Status check indicates job did not complete successfully`);
+                  }
+                }
+              } catch (statusError) {
+                console.error(`Final status check failed:`, statusError);
+              }
+              
+              console.log(`⚠️ Cannot confirm job success after extended wait, marking as error`);
+              return "error"; // Only return error if we can't confirm success
             }
           } catch (parseError) {
             console.error("Error parsing conflict response:", parseError);
