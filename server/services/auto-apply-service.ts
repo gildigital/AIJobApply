@@ -19,11 +19,11 @@ export interface JobListing {
   company: string;
   description: string;
   applyUrl: string;
-  location?: string;
+  location: string;        // Required location field for consistency with job-scraper.ts
   postedAt?: string;
-  source?: string;
-  externalJobId?: string; // Unique identifier from the source
-  matchScore?: number;    // Score indicating how well the job matches the user's profile
+  source: string;          // Required source field (workable, adzuna, etc.)
+  externalJobId: string;   // Required unique identifier from the source
+  matchScore?: number;     // Score indicating how well the job matches the user's profile
 }
 
 /**
@@ -354,8 +354,28 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
     const workableJobs = await getWorkableJobsForUser(userId);
     console.log(`Found ${workableJobs.length} jobs from Workable`);
     
-    if (workableJobs.length === 0) {
-      console.log("No Workable jobs found for the user's criteria");
+    // Get Adzuna jobs for the user
+    console.log(`Searching for Adzuna jobs for user ${userId}...`);
+    let adzunaJobs: JobListing[] = [];
+    try {
+      const { searchJobs } = await import("./job-scraper.js");
+      adzunaJobs = await searchJobs(userId, {
+        keywords: profile?.jobTitlesOfInterest || [],
+        location: profile?.locationsOfInterest?.[0] || "United States",
+        limit: 15 // Get a good amount for testing
+      });
+      console.log(`Found ${adzunaJobs.length} jobs from Adzuna`);
+    } catch (error) {
+      console.error("Error fetching Adzuna jobs:", error);
+      // Continue with just Workable jobs if Adzuna fails
+    }
+    
+    // Combine jobs from both sources
+    const allJobs = [...workableJobs, ...adzunaJobs];
+    console.log(`Total jobs found: ${allJobs.length} (${workableJobs.length} Workable + ${adzunaJobs.length} Adzuna)`);
+    
+    if (allJobs.length === 0) {
+      console.log("No jobs found from either Workable or Adzuna for the user's criteria");
       return [];
     }
     
@@ -363,18 +383,18 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
     if (profile?.excludedCompanies && profile.excludedCompanies.length > 0) {
       const excludedCompanies = profile.excludedCompanies.map((c: string) => c.toLowerCase());
       
-      const filteredJobs = workableJobs.filter(job => {
+      const filteredJobs = allJobs.filter(job => {
         // If company name is in the excluded list, filter it out
         const companyName = job.company?.toLowerCase() || '';
         return !excludedCompanies.some((excluded: string) => companyName.includes(excluded));
       });
       
-      console.log(`Filtered out ${workableJobs.length - filteredJobs.length} jobs from excluded companies`);
+      console.log(`Filtered out ${allJobs.length - filteredJobs.length} jobs from excluded companies`);
       return filteredJobs;
     }
     
-    // Return Workable jobs
-    return workableJobs;
+    // Return all jobs (Workable + Adzuna)
+    return allJobs;
   } catch (error) {
     // Log the error but don't fail the entire process
     console.error("Error getting job listings:", error);

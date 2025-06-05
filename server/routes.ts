@@ -42,6 +42,12 @@ import { registerEnvTestRoutes } from "./routes/env-test-routes.js";
 import { registerDirectFetchTestRoutes } from "./routes/direct-fetch-test-routes.js";
 import { registerWorkableDirectFetch } from "./routes/workable-direct-fetch.js";
 import { registerMigrationRoutes } from "./routes/migration-routes.js";
+import { 
+  testAdzunaSearch, 
+  testIntegratedJobSearch, 
+  testAutoApplyWithAdzuna, 
+  testAdzunaHealth 
+} from "./routes/adzuna-test-routes.js";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -94,6 +100,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Setup database migration routes
   registerMigrationRoutes(app);
+  
+  // Setup Adzuna test routes
+  app.get("/api/test/adzuna/search", testAdzunaSearch);
+  app.get("/api/test/adzuna/integrated", testIntegratedJobSearch);
+  app.post("/api/test/adzuna/auto-apply", testAutoApplyWithAdzuna);
+  app.get("/api/test/adzuna/health", testAdzunaHealth);
 
   // Application answers API
   app.get("/api/application-answers", async (req, res) => {
