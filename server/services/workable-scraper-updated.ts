@@ -1,3 +1,5 @@
+import { storage } from '../storage.js';
+
 /**
  * Workable job search parameters
  */

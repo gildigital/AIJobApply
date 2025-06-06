@@ -19,11 +19,11 @@ export interface JobListing {
   company: string;
   description: string;
   applyUrl: string;
-  location?: string;
+  location: string;        // Required location field for consistency with job-scraper.ts
   postedAt?: string;
-  source?: string;
-  externalJobId?: string; // Unique identifier from the source
-  matchScore?: number;    // Score indicating how well the job matches the user's profile
+  source: string;          // Required source field (workable, adzuna, etc.)
+  externalJobId: string;   // Required unique identifier from the source
+  matchScore?: number;     // Score indicating how well the job matches the user's profile
   _needsProcessing?: boolean; // Flag to indicate this job needs details fetched
   _jobLinkId?: number;    // ID of the corresponding job link in database
 }

@@ -40,8 +40,9 @@ export interface JobListing {
   applyUrl: string;
   location: string;
   source: string;
+  externalJobId: string;  // Required to match auto-apply-service.ts
   matchScore?: number;
-  externalJobId?: string;
+  postedAt?: string;
 }
 
 /**
@@ -1379,6 +1380,7 @@ export class WorkableScraper {
             applyUrl: jobLink,
             location: jobDetail.location,
             source: "workable",
+            externalJobId: jobLink.split('/').pop() || `workable-${Date.now()}`, // Extract ID from URL or generate one
             matchScore,
           });
         }
