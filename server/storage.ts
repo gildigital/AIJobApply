@@ -8,6 +8,12 @@ import {
   portfolios, type Portfolio, type InsertPortfolio,
   autoApplyLogs
 } from "@shared/schema.js";
+// @ts-ignore - local schema types
+import { jobLinks } from "./local-schema.js";
+
+// Type definitions for JobLinks
+type JobLinks = typeof jobLinks.$inferSelect;
+type InsertJobLinks = typeof jobLinks.$inferInsert;
 import { db } from "./db.js";
 import { eq, and, gte, lt, count, desc, asc, or } from "drizzle-orm";
 import session from "express-session";
@@ -66,6 +72,14 @@ export interface IStorage {
   getQueuedJobsForJobId(jobId: number): Promise<JobQueue[]>;
   updateQueuedJob(id: number, data: Partial<JobQueue>): Promise<JobQueue | undefined>;
   dequeueJob(id: number): Promise<boolean>;
+  
+  // Job Links Methods
+  addJobLinks(links: InsertJobLinks[]): Promise<JobLinks[]>;
+  getJobLinksForUser(userId: number, status?: string): Promise<JobLinks[]>;
+  getNextJobLinksToProcess(userId: number, limit: number): Promise<JobLinks[]>;
+  updateJobLink(id: number, data: Partial<JobLinks>): Promise<JobLinks | undefined>;
+  markJobLinkAsProcessed(id: number, jobTrackerId?: number): Promise<JobLinks | undefined>;
+  getPendingJobLinksCount(userId: number): Promise<number>;
   
   // Session Store
   sessionStore: any;
@@ -543,6 +557,97 @@ export class DatabaseStorage implements IStorage {
       .delete(portfolios)
       .where(eq(portfolios.id, id));
     return true;
+  }
+
+  // Job Links Methods
+  async addJobLinks(links: InsertJobLinks[]): Promise<JobLinks[]> {
+    if (!links || links.length === 0) {
+      return [];
+    }
+
+    // Extract external job IDs from URLs for deduplication
+    const preparedLinks = links.map(link => ({
+      ...link,
+      externalJobId: link.externalJobId || link.url.split('/').pop(),
+      createdAt: new Date(),
+    }));
+
+    try {
+      const insertedLinks = await db
+        .insert(jobLinks)
+        .values(preparedLinks as any[])
+        .onConflictDoNothing() // Ignore duplicates based on unique constraint
+        .returning();
+      
+      return insertedLinks;
+    } catch (error) {
+      // If conflict happens, still return empty array rather than throwing
+      console.log('Some job links may have been duplicates, continuing...');
+      return [];
+    }
+  }
+
+  async getJobLinksForUser(userId: number, status?: string): Promise<JobLinks[]> {
+    if (status) {
+      return await db
+        .select()
+        .from(jobLinks)
+        .where(and(eq(jobLinks.userId, userId), eq(jobLinks.status, status)))
+        .orderBy(desc(jobLinks.priority), asc(jobLinks.createdAt));
+    }
+    
+    return await db
+      .select()
+      .from(jobLinks)
+      .where(eq(jobLinks.userId, userId))
+      .orderBy(desc(jobLinks.priority), asc(jobLinks.createdAt));
+  }
+
+  async getNextJobLinksToProcess(userId: number, limit: number): Promise<JobLinks[]> {
+    return await db
+      .select()
+      .from(jobLinks)
+      .where(
+        and(
+          eq(jobLinks.userId, userId),
+          eq(jobLinks.status, 'pending')
+        )
+      )
+      .orderBy(desc(jobLinks.priority), asc(jobLinks.createdAt))
+      .limit(limit);
+  }
+
+  async updateJobLink(id: number, data: Partial<JobLinks>): Promise<JobLinks | undefined> {
+    const [updatedLink] = await db
+      .update(jobLinks)
+      .set(data)
+      .where(eq(jobLinks.id, id))
+      .returning();
+    
+    return updatedLink || undefined;
+  }
+
+  async markJobLinkAsProcessed(id: number, jobTrackerId?: number): Promise<JobLinks | undefined> {
+    const updateData: Partial<JobLinks> = {
+      status: 'processed',
+      processedAt: new Date(),
+    };
+
+    return await this.updateJobLink(id, updateData);
+  }
+
+  async getPendingJobLinksCount(userId: number): Promise<number> {
+    const [result] = await db
+      .select({ count: count() })
+      .from(jobLinks)
+      .where(
+        and(
+          eq(jobLinks.userId, userId),
+          eq(jobLinks.status, 'pending')
+        )
+      );
+    
+    return result?.count || 0;
   }
 }
 

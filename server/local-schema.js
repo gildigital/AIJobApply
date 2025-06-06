@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, date } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, date, unique, real } from "drizzle-orm/pg-core";
 import { z } from "zod";
 export const subscriptionPlans = [
     {
@@ -208,6 +208,23 @@ export const jobQueue = pgTable("job_queue", {
     attemptCount: integer("attempt_count").default(0).notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+// Job Links table - stores scraped job URLs before processing
+export const jobLinks = pgTable("job_links", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id),
+    url: text("url").notNull(),
+    source: text("source").notNull().default("workable"), // Source of the job posting
+    externalJobId: text("external_job_id"), // Extracted from URL for deduplication
+    query: text("query"), // Search query that found this job
+    status: text("status", { enum: ["pending", "processing", "processed", "failed", "skipped"] }).default("pending").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    processedAt: timestamp("processed_at"),
+    priority: real("priority").default(1.0).notNull(), // Priority for processing
+    error: text("error"),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+});
+// Add unique constraint to prevent duplicate URLs for the same user
+export const jobLinksUnique = unique().on(jobLinks.userId, jobLinks.url);
 // Manual schema definition to avoid type errors
 export const insertJobQueueSchema = z.object({
     userId: z.number(),
@@ -220,6 +237,24 @@ export const insertJobQueueSchema = z.object({
     attemptCount: z.number().optional().default(0),
     updatedAt: z.date().optional(),
 });
+// Job Links schema
+export const insertJobLinksSchema = z.object({
+    userId: z.number(),
+    url: z.string(),
+    source: z.string().optional().default("workable"),
+    externalJobId: z.string().optional(),
+    query: z.string().optional(),
+    status: z.string().optional().default("pending"),
+    createdAt: z.date().optional(),
+    processedAt: z.date().optional(),
+    priority: z.number().optional().default(1.0),
+    error: z.string().optional(),
+    attemptCount: z.number().optional().default(0),
+});
+
+// Type definitions for jobLinks
+export const JobLinksType = jobLinks;
+export const InsertJobLinksType = insertJobLinksSchema;
 // User Profile schema with additional fields required by the Profile Management feature
 export const userProfiles = pgTable("user_profiles", {
     id: serial("id").primaryKey(),

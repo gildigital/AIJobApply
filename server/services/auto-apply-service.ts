@@ -24,6 +24,8 @@ export interface JobListing {
   source?: string;
   externalJobId?: string; // Unique identifier from the source
   matchScore?: number;    // Score indicating how well the job matches the user's profile
+  _needsProcessing?: boolean; // Flag to indicate this job needs details fetched
+  _jobLinkId?: number;    // ID of the corresponding job link in database
 }
 
 /**
@@ -162,6 +164,111 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
           message: `Daily limit of ${maxApplications} applications reached`
         });
         return;
+      }
+
+      // If this job needs processing (i.e., it's just a link), fetch the details now
+      if (job._needsProcessing && job._jobLinkId) {
+        await createAutoApplyLog({
+          userId,
+          status: "Processing",
+          message: `Fetching job details from ${job.applyUrl}`
+        });
+
+        try {
+          // Mark the job link as being processed
+          await storage.updateJobLink(job._jobLinkId, { 
+            status: 'processing',
+            attemptCount: 1 
+          });
+
+          // Fetch job details using the direct fetch API
+          const VITE_BACKEND_URL = process.env.VITE_BACKEND_URL || "http://localhost:5000";
+          const apiUrl = `${VITE_BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(job.applyUrl)}`;
+          
+          console.log(`Fetching Workable job from URL: ${job.applyUrl}`);
+          const response = await fetch(apiUrl);
+          
+          if (!response.ok) {
+            console.error(`Failed to fetch job details (${job.applyUrl}): ${response.status} ${response.statusText}`);
+            
+            if (response.status === 429) {
+              // Rate limited - mark as failed and continue
+              await storage.updateJobLink(job._jobLinkId, { 
+                status: 'failed',
+                error: 'Rate limited (429)',
+                processedAt: new Date()
+              });
+              
+              await createAutoApplyLog({
+                userId,
+                status: "Skipped",
+                message: `Rate limited when fetching job details from ${job.applyUrl}`
+              });
+              continue;
+            } else {
+              // Other error - mark as failed and continue
+              await storage.updateJobLink(job._jobLinkId, { 
+                status: 'failed',
+                error: `HTTP ${response.status}: ${response.statusText}`,
+                processedAt: new Date()
+              });
+              
+              await createAutoApplyLog({
+                userId,
+                status: "Skipped",
+                message: `Failed to fetch job details from ${job.applyUrl}: ${response.statusText}`
+              });
+              continue;
+            }
+          }
+
+          const data = await response.json();
+          
+          if (data.success && data.job) {
+            // Update the job object with fetched details
+            job.jobTitle = data.job.title;
+            job.company = data.job.company;
+            job.description = data.job.description || 'No description available';
+            job.location = data.job.location || 'Remote';
+            
+            // Mark job link as processed
+            await storage.markJobLinkAsProcessed(job._jobLinkId);
+            
+            console.log(`Successfully fetched job details: ${job.jobTitle} at ${job.company}`);
+          } else {
+            // Invalid data - mark as failed and continue
+            await storage.updateJobLink(job._jobLinkId, { 
+              status: 'failed',
+              error: 'Invalid job data received',
+              processedAt: new Date()
+            });
+            
+            await createAutoApplyLog({
+              userId,
+              status: "Skipped",
+              message: `Invalid job data received from ${job.applyUrl}`
+            });
+            continue;
+          }
+        } catch (error: any) {
+          console.error(`Error fetching job details for ${job.applyUrl}:`, error);
+          
+          // Mark as failed and continue
+          if (job._jobLinkId) {
+            await storage.updateJobLink(job._jobLinkId, { 
+              status: 'failed',
+              error: error.message || 'Unknown error',
+              processedAt: new Date()
+            });
+          }
+          
+          await createAutoApplyLog({
+            userId,
+            status: "Skipped",
+            message: `Error fetching job details from ${job.applyUrl}: ${error.message}`
+          });
+          continue;
+        }
       }
 
       // Check if we've already applied to this job
@@ -324,8 +431,8 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
 }
 
 /**
- * Gets job listings that match a user's profile
- * Uses external APIs to get real job listings
+ * Gets job listings for a user by first scraping links, then processing them one by one
+ * This replaces the old approach of fetching all job details at once
  */
 export async function getJobListingsForUser(userId: number): Promise<JobListing[]> {
   try {
@@ -349,32 +456,50 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
       excludedCompanies: profile?.excludedCompanies || []
     });
     
-    // Get Workable jobs for the user
-    console.log(`Searching for Workable jobs for user ${userId}...`);
-    const workableJobs = await getWorkableJobsForUser(userId);
-    console.log(`Found ${workableJobs.length} jobs from Workable`);
+    // First, check if we have pending job links to process
+    const pendingJobLinksCount = await storage.getPendingJobLinksCount(userId);
+    console.log(`Found ${pendingJobLinksCount} pending job links for user ${userId}`);
     
-    if (workableJobs.length === 0) {
-      console.log("No Workable jobs found for the user's criteria");
+    if (pendingJobLinksCount === 0) {
+      // No pending links, scrape for new ones
+      console.log(`No pending job links found, scraping for new jobs for user ${userId}...`);
+      const workableJobs = await getWorkableJobsForUser(userId);
+      console.log(`Scraping completed, found ${workableJobs.length} job placeholders from Workable`);
+      
+      // Check again for pending links after scraping
+      const newPendingCount = await storage.getPendingJobLinksCount(userId);
+      console.log(`After scraping, found ${newPendingCount} pending job links`);
+      
+      if (newPendingCount === 0) {
+        console.log("No new job links found after scraping");
+        return [];
+      }
+    }
+    
+    // Now process job links one at a time
+    // Get multiple pending links since we'll process them one by one in processAutoApply
+    const pendingLinks = await storage.getNextJobLinksToProcess(userId, 50); // Get up to 50 links to process
+    console.log(`Retrieved ${pendingLinks.length} job links for processing`);
+    
+    if (pendingLinks.length === 0) {
       return [];
     }
     
-    // Filter out excluded companies if specified
-    if (profile?.excludedCompanies && profile.excludedCompanies.length > 0) {
-      const excludedCompanies = profile.excludedCompanies.map((c: string) => c.toLowerCase());
-      
-      const filteredJobs = workableJobs.filter(job => {
-        // If company name is in the excluded list, filter it out
-        const companyName = job.company?.toLowerCase() || '';
-        return !excludedCompanies.some((excluded: string) => companyName.includes(excluded));
-      });
-      
-      console.log(`Filtered out ${workableJobs.length - filteredJobs.length} jobs from excluded companies`);
-      return filteredJobs;
-    }
+    // Convert pending links to JobListing objects for processing
+    const jobListings: JobListing[] = pendingLinks.map(link => ({
+      jobTitle: 'Processing Job Link', // Placeholder - will be fetched during processing
+      company: 'Pending',
+      description: 'Job details will be fetched during application process',
+      applyUrl: link.url,
+      location: 'Remote',
+      source: link.source,
+      externalJobId: link.externalJobId || undefined,
+      // Add a special flag to indicate this needs processing
+      _needsProcessing: true,
+      _jobLinkId: link.id
+    }));
     
-    // Return Workable jobs
-    return workableJobs;
+    return jobListings;
   } catch (error) {
     // Log the error but don't fail the entire process
     console.error("Error getting job listings:", error);
@@ -774,7 +899,6 @@ async function submitApplicationToPlaywright(
             console.log(`Making a final lightweight status check to verify if the application completed...`);
             const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
               method: "GET",
-              timeout: 5000, // Quick check
             }).catch(e => null);
             
             if (statusResponse && statusResponse.ok) {
@@ -799,10 +923,10 @@ async function submitApplicationToPlaywright(
         }
         
         // If the error is a timeout or other network error, retry
-        if (error.name === 'AbortError' || 
-            error.name === 'HeadersTimeoutError' || 
-            error.code === 'UND_ERR_HEADERS_TIMEOUT' ||
-            error.message?.includes('timeout')) {
+        if ((error as any).name === 'AbortError' || 
+            (error as any).name === 'HeadersTimeoutError' || 
+            (error as any).code === 'UND_ERR_HEADERS_TIMEOUT' ||
+            (error as any).message?.includes('timeout')) {
           console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
           // Wait 5 seconds before retrying
           await new Promise(resolve => setTimeout(resolve, 5000));
@@ -814,6 +938,11 @@ async function submitApplicationToPlaywright(
     }
     
     // Handle the response
+    if (!response) {
+      console.error("No response received from Playwright worker");
+      return "error";
+    }
+    
     if (!response.ok) {
       let errorMessage = "";
       let detailedErrorInfo = "";
