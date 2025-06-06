@@ -228,10 +228,6 @@ export const jobLinks = pgTable("job_links", {
 // Add unique constraint to prevent duplicate URLs for the same user
 export const jobLinksUnique = unique().on(jobLinks.userId, jobLinks.url);
 
-// Type definitions for jobLinks
-export type JobLinks = typeof jobLinks.$inferSelect;
-export type InsertJobLinks = typeof jobLinks.$inferInsert;
-
 // Manual schema definition to avoid type errors
 export const insertJobQueueSchema = z.object({
     userId: z.number(),
