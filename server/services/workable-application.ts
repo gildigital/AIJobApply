@@ -763,7 +763,13 @@ export async function submitWorkableApplication(
           },
           body: JSON.stringify(payload),
           signal: controller.signal,
-        });
+          // Configure undici timeouts to handle long-running requests
+          timeout: timeoutMs,
+          keepalive: true,
+          // Additional timeout configurations for undici
+          headersTimeout: timeoutMs, // Set headers timeout to match our abort timeout
+          bodyTimeout: timeoutMs,    // Set body timeout to match our abort timeout
+        } as any); // Cast to any to avoid TypeScript errors for undici-specific options
         
         // Clear timeout if the request completes
         clearTimeout(timeoutId);
@@ -791,7 +797,10 @@ export async function submitWorkableApplication(
                 console.log(`Making final status check to verify actual job completion...`);
                 const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
                   method: "GET",
-                }).catch(() => null);
+                  timeout: 30000, // 30 second timeout for status checks
+                  headersTimeout: 30000,
+                  bodyTimeout: 30000,
+                } as any).catch(() => null);
                 
                 if (statusResponse && statusResponse.ok) {
                   const status = await statusResponse.json();
@@ -825,7 +834,10 @@ export async function submitWorkableApplication(
                 console.log(`Making secondary verification check for job completion...`);
                 const verifyResponse = await fetch(`${completeWorkerUrl}/recent-jobs`, {
                   method: "GET",
-                }).catch(() => null);
+                  timeout: 30000, // 30 second timeout for verification checks
+                  headersTimeout: 30000,
+                  bodyTimeout: 30000,
+                } as any).catch(() => null);
                 
                 if (verifyResponse && verifyResponse.ok) {
                   const recentJobs = await verifyResponse.json();
@@ -878,7 +890,10 @@ export async function submitWorkableApplication(
             console.log(`Making a final lightweight status check to verify if the application completed...`);
             const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
               method: "GET",
-            }).catch(() => null);
+              timeout: 30000, // 30 second timeout for final status checks
+              headersTimeout: 30000,
+              bodyTimeout: 30000,
+            } as any).catch(() => null);
             
             if (statusResponse && statusResponse.ok) {
               const status = await statusResponse.json();
@@ -906,7 +921,46 @@ export async function submitWorkableApplication(
             (error as any).name === 'HeadersTimeoutError' || 
             (error as any).code === 'UND_ERR_HEADERS_TIMEOUT' ||
             (error as any).message?.includes('timeout')) {
+          
           console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
+          
+          // For HeadersTimeoutError specifically, immediately check if the job actually succeeded
+          if ((error as any).code === 'UND_ERR_HEADERS_TIMEOUT' || (error as any).name === 'HeadersTimeoutError') {
+            console.log(`📞 HeadersTimeoutError detected - checking if job actually succeeded despite timeout...`);
+            try {
+              // Wait a moment for the job to potentially complete
+              await new Promise(resolve => setTimeout(resolve, 10000));
+              
+              const quickStatusResponse = await fetch(`${completeWorkerUrl}/status`, {
+                method: "GET",
+                timeout: 15000,
+                headersTimeout: 15000,
+                bodyTimeout: 15000,
+              } as any).catch(() => null);
+              
+              if (quickStatusResponse && quickStatusResponse.ok) {
+                const quickStatus = await quickStatusResponse.json();
+                console.log(`📞 Quick status check after HeadersTimeoutError:`, JSON.stringify(quickStatus, null, 2));
+                
+                // Check if the job completed successfully despite the timeout
+                const wasActuallySuccessful = quickStatus && (
+                  quickStatus.lastJobSuccessful === true ||
+                  quickStatus.lastResult === "success" ||
+                  quickStatus.status === "success" ||
+                  (quickStatus.lastJob && quickStatus.lastJob.status === "success") ||
+                  (quickStatus.lastJob && quickStatus.lastJob.result === "success")
+                );
+                
+                if (wasActuallySuccessful) {
+                  console.log(`🎉 HeadersTimeoutError was a false negative - job actually succeeded!`);
+                  return "success";
+                }
+              }
+            } catch (quickCheckError) {
+              console.error(`📞 Quick status check after HeadersTimeoutError failed:`, quickCheckError);
+            }
+          }
+          
           // Wait 5 seconds before retrying
           await new Promise(resolve => setTimeout(resolve, 5000));
         } else {
