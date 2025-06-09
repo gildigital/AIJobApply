@@ -739,8 +739,8 @@ export async function submitWorkableApplication(
     );
 
     // Implement a more robust progression of timeouts
-    const MAX_RETRIES = 4; // Increase max retries
-    const TIMEOUT_PROGRESSION = [90000, 180000, 300000, 480000]; // 1.5, 3, 5, 8 minutes
+    const MAX_RETRIES = 3; // Reduce retries but increase timeouts  
+    const TIMEOUT_PROGRESSION = [300000, 480000, 600000]; // 5, 8, 10 minutes - longer for Cloudflare challenges
     
     let retryCount = 0;
     let response = null;
@@ -795,17 +795,58 @@ export async function submitWorkableApplication(
                 
                 if (statusResponse && statusResponse.ok) {
                   const status = await statusResponse.json();
-                  console.log(`Final status check result:`, status);
+                  console.log(`Final status check result:`, JSON.stringify(status, null, 2));
                   
-                  if (status && status.lastJobSuccessful) {
+                  // Check multiple success indicators
+                  const isSuccessful = status && (
+                    status.lastJobSuccessful === true ||
+                    status.lastResult === "success" ||
+                    status.status === "success" ||
+                    (status.lastJob && status.lastJob.status === "success") ||
+                    (status.lastJob && status.lastJob.result === "success")
+                  );
+                  
+                  if (isSuccessful) {
                     console.log(`✅ Status check confirms job completed successfully`);
                     return "success";
                   } else {
                     console.log(`❌ Status check indicates job did not complete successfully`);
+                    console.log(`❌ Checked flags: lastJobSuccessful=${status.lastJobSuccessful}, lastResult=${status.lastResult}, status=${status.status}`);
                   }
+                } else {
+                  console.log(`❌ Status check request failed or returned non-OK status`);
                 }
               } catch (statusError) {
                 console.error(`Final status check failed:`, statusError);
+              }
+              
+              // Before marking as error, try one more specific check for recent job completions
+              try {
+                console.log(`Making secondary verification check for job completion...`);
+                const verifyResponse = await fetch(`${completeWorkerUrl}/recent-jobs`, {
+                  method: "GET",
+                }).catch(() => null);
+                
+                if (verifyResponse && verifyResponse.ok) {
+                  const recentJobs = await verifyResponse.json();
+                  console.log(`Recent jobs check result:`, JSON.stringify(recentJobs, null, 2));
+                  
+                                     // Look for a recent successful job matching our URL
+                   if (recentJobs && Array.isArray(recentJobs.jobs)) {
+                     const recentSuccess = recentJobs.jobs.find((recentJob: any) => 
+                       recentJob.url === job.applyUrl && 
+                       (recentJob.status === "success" || recentJob.result === "success") &&
+                       (Date.now() - new Date(recentJob.completedAt).getTime()) < 300000 // Within last 5 minutes
+                     );
+                     
+                     if (recentSuccess) {
+                       console.log(`✅ Found recent successful job completion in recent-jobs endpoint`);
+                       return "success";
+                     }
+                   }
+                }
+              } catch (verifyError) {
+                console.error(`Secondary verification check failed:`, verifyError);
               }
               
               console.log(`⚠️ Cannot confirm job success after extended wait, marking as error`);
@@ -861,10 +902,10 @@ export async function submitWorkableApplication(
         }
         
         // If the error is a timeout or other network error, retry
-        if (error.name === 'AbortError' || 
-            error.name === 'HeadersTimeoutError' || 
-            error.code === 'UND_ERR_HEADERS_TIMEOUT' ||
-            error.message?.includes('timeout')) {
+        if ((error as any).name === 'AbortError' || 
+            (error as any).name === 'HeadersTimeoutError' || 
+            (error as any).code === 'UND_ERR_HEADERS_TIMEOUT' ||
+            (error as any).message?.includes('timeout')) {
           console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
           // Wait 5 seconds before retrying
           await new Promise(resolve => setTimeout(resolve, 5000));
@@ -873,6 +914,12 @@ export async function submitWorkableApplication(
           throw error;
         }
       }
+    }
+
+    // Ensure we have a valid response before proceeding
+    if (!response) {
+      console.error("No response received from Playwright worker after all retry attempts");
+      return "error";
     }
 
     if (!response.ok) {
@@ -981,7 +1028,16 @@ ${failedFields.map((field: any) =>
     console.log(`[WORKABLE-DEBUG] Additional success flags present: success_flag=${!!result.success_flag}, result=${result.result}`);
     
     // Modified condition to check multiple success indicators
-    if (result.status === "success" || result.success_flag === true || result.result === "success") {
+    const isSuccessfulApplication = (
+      result.status === "success" || 
+      result.success_flag === true || 
+      result.result === "success" ||
+      result.applicationSuccessful === true ||
+      (result.message && result.message.toLowerCase().includes('success')) ||
+      (result.details && result.details.toLowerCase().includes('application process completed successfully'))
+    );
+    
+    if (isSuccessfulApplication) {
       console.log(
         `✅ Application successfully submitted for ${job.jobTitle} at ${job.company}`,
       );
@@ -995,6 +1051,7 @@ ${failedFields.map((field: any) =>
       return "skipped";
     } else {
       console.error(`❌ Unexpected result status: ${result.status}`);
+      console.error(`❌ Full result object: ${JSON.stringify(result, null, 2)}`);
       console.log(`[WORKABLE-DEBUG] Returning 'error' to auto-apply-service`);
       return "error";
     }
