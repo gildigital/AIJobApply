@@ -17,13 +17,13 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 export default function ApplicationAnswersCard() {
   const [open, setOpen] = useState(false);
   
-  const { data: answers, isLoading } = useQuery({
+  const { data: answers, isLoading } = useQuery<any[]>({
     queryKey: ["/api/application-answers"],
   });
 
   // Group answers by category
-  const requiredAnswers = answers?.filter((answer: any) => answer.category === "required") || [];
-  const demographicAnswers = answers?.filter((answer: any) => answer.category === "demographic") || [];
+  const requiredAnswers = (answers || []).filter((answer: any) => answer.category === "required");
+  const demographicAnswers = (answers || []).filter((answer: any) => answer.category === "demographic");
   
   // For the card preview, show a subset of important answers
   const previewAnswers = [
@@ -35,7 +35,7 @@ export default function ApplicationAnswersCard() {
   ];
 
   const findAnswer = (questionText: string) => {
-    return answers?.find((answer: any) => answer.questionText === questionText)?.answer || "Not provided";
+    return (answers || []).find((answer: any) => answer.questionText === questionText)?.answer || "Not provided";
   };
 
   // Format the "Last job title" and "Last company" into a single line
@@ -77,9 +77,9 @@ export default function ApplicationAnswersCard() {
                     <AccordionContent>
                       <div className="space-y-2">
                         {requiredAnswers.map((answer: any) => (
-                          <div key={answer.id} className="flex flex-col space-y-1 py-2 border-b border-gray-100 last:border-0">
-                            <span className="text-sm font-medium text-gray-700">{answer.questionText}</span>
-                            <span className="text-sm text-gray-600">{answer.answer}</span>
+                          <div key={answer.id} className="flex flex-col space-y-1 py-2 border-b border-border last:border-0">
+                            <span className="text-sm font-medium text-foreground">{answer.questionText}</span>
+                            <span className="text-sm text-muted-foreground">{answer.answer}</span>
                           </div>
                         ))}
                       </div>
@@ -91,13 +91,13 @@ export default function ApplicationAnswersCard() {
                       <div className="space-y-2">
                         {demographicAnswers.length > 0 ? (
                           demographicAnswers.map((answer: any) => (
-                            <div key={answer.id} className="flex flex-col space-y-1 py-2 border-b border-gray-100 last:border-0">
-                              <span className="text-sm font-medium text-gray-700">{answer.questionText}</span>
-                              <span className="text-sm text-gray-600">{answer.answer}</span>
+                            <div key={answer.id} className="flex flex-col space-y-1 py-2 border-b border-border last:border-0">
+                              <span className="text-sm font-medium text-foreground">{answer.questionText}</span>
+                              <span className="text-sm text-muted-foreground">{answer.answer}</span>
                             </div>
                           ))
                         ) : (
-                          <div className="text-sm text-gray-500">No demographic information provided.</div>
+                          <div className="text-sm text-muted-foreground">No demographic information provided.</div>
                         )}
                       </div>
                     </AccordionContent>
@@ -119,35 +119,35 @@ export default function ApplicationAnswersCard() {
           ) : (
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <dt className="text-gray-500">Work Authorization:</dt>
-                <dd className="text-gray-900">{findAnswer("Are you authorized to work in the U.S.?") === "yes" ? "Yes" : "No"}</dd>
+                <dt className="text-muted-foreground">Work Authorization:</dt>
+                <dd className="text-foreground">{findAnswer("Are you authorized to work in the U.S.?") === "yes" ? "Yes" : "No"}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-gray-500">Time Zone:</dt>
-                <dd className="text-gray-900">{findAnswer("What time zone are you located in?")}</dd>
+                <dt className="text-muted-foreground">Time Zone:</dt>
+                <dd className="text-foreground">{findAnswer("What time zone are you located in?")}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-gray-500">Education:</dt>
-                <dd className="text-gray-900">{findAnswer("What's your highest education level?")}</dd>
+                <dt className="text-muted-foreground">Education:</dt>
+                <dd className="text-foreground">{findAnswer("What's your highest education level?")}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-gray-500">Experience:</dt>
-                <dd className="text-gray-900">{findAnswer("How many years of experience do you have?")}</dd>
+                <dt className="text-muted-foreground">Experience:</dt>
+                <dd className="text-foreground">{findAnswer("How many years of experience do you have?")}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-gray-500">Last Job:</dt>
-                <dd className="text-gray-900">{getLastJob()}</dd>
+                <dt className="text-muted-foreground">Last Job:</dt>
+                <dd className="text-foreground">{getLastJob()}</dd>
               </div>
             </dl>
           )}
         </CardContent>
-        <CardFooter className="bg-gray-50 px-4 py-3 text-xs text-gray-500">
+        <CardFooter className="bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
           {isLoading ? (
             <Skeleton className="h-4 w-3/4" />
           ) : (
             <div>
-              <span className="font-medium text-gray-900">{requiredAnswers.length}</span> required answers and{" "}
-              <span className="font-medium text-gray-900">{demographicAnswers.length}</span> optional answers saved
+              <span className="font-medium text-foreground">{requiredAnswers.length}</span> required answers and{" "}
+              <span className="font-medium text-foreground">{demographicAnswers.length}</span> optional answers saved
             </div>
           )}
         </CardFooter>

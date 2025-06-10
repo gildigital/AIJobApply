@@ -135,13 +135,13 @@ export default function ResumeCard() {
             <Skeleton className="h-8 w-1/2" />
           </div>
         ) : !resume ? (
-          <div className="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+          <div className="mt-2 flex justify-center px-6 pt-5 pb-6 border-2 border-dashed border-border rounded-md">
             <div className="space-y-1 text-center">
-              <Upload className="mx-auto h-12 w-12 text-gray-400" />
-              <div className="flex text-sm text-gray-600 justify-center">
+              <Upload className="mx-auto h-12 w-12 text-muted-foreground" />
+              <div className="flex text-sm text-muted-foreground justify-center">
                 <label
                   htmlFor="dashboard-resume-upload"
-                  className="relative cursor-pointer bg-white rounded-md font-medium text-primary-600 hover:text-primary-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary-500"
+                  className="relative cursor-pointer bg-background rounded-md font-medium text-primary hover:text-primary/80 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-primary"
                 >
                   <span>Upload a file</span>
                   <input
@@ -156,15 +156,15 @@ export default function ResumeCard() {
                 </label>
                 <p className="pl-1">or drag and drop</p>
               </div>
-              <p className="text-xs text-gray-500">PDF up to 10MB</p>
+              <p className="text-xs text-muted-foreground">PDF up to 10MB</p>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col p-4 border border-gray-200 rounded-md space-y-3">
+          <div className="flex flex-col p-4 border border-border rounded-md space-y-3">
             {/* Top Part: File icon and filename */}
             <div className="flex items-center min-w-0">
-              <FileType className="h-6 w-6 text-primary-500 mr-3 flex-shrink-0" />
-              <span className="text-sm text-gray-700 block overflow-hidden text-ellipsis whitespace-nowrap">
+              <FileType className="h-6 w-6 text-primary mr-3 flex-shrink-0" />
+              <span className="text-sm text-foreground block overflow-hidden text-ellipsis whitespace-nowrap">
                 {resume.filename}
               </span>
             </div>
@@ -206,7 +206,7 @@ export default function ResumeCard() {
         )}
 
         {uploadMutation.isPending && (
-          <div className="mt-3 text-sm text-center text-gray-500">
+          <div className="mt-3 text-sm text-center text-muted-foreground">
             Uploading resume...
           </div>
         )}
