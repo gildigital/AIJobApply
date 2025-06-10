@@ -86,12 +86,12 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] bg-gray-50">
+    <div className="flex min-h-[calc(100vh-4rem)] bg-background">
       <div className="flex flex-col justify-center flex-1 px-4 py-12 sm:px-6 lg:flex-none lg:px-20 xl:px-24">
         <div className="w-full max-w-sm mx-auto lg:w-96">
           <div className="mb-6">
-            <h2 className="text-3xl font-extrabold text-gray-900">AIJobApply</h2>
-            <p className="mt-2 text-sm text-gray-600">
+            <h2 className="text-3xl font-extrabold text-foreground">AIJobApply</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
               Answer once. Apply everywhere.
             </p>
           </div>
@@ -275,41 +275,41 @@ export default function AuthPage() {
       </div>
 
       <div className="relative flex-1 hidden w-0 lg:block">
-        <div className="absolute inset-0 bg-primary-600/10">
+        <div className="absolute inset-0 bg-primary/10">
           <div className="flex flex-col justify-center h-full p-16">
             <div className="max-w-lg mx-auto space-y-6">
               <h1 className="text-4xl font-extrabold tracking-tight">
-                <span className="block text-gray-900">Answer once.</span>
+                <span className="block text-foreground">Answer once.</span>
                 <span className="block text-primary">Apply everywhere.</span>
               </h1>
-              <p className="text-lg text-gray-600">
+              <p className="text-lg text-muted-foreground">
                 Save time on job applications by answering common questions just once. 
                 Upload your resume, track your applications, and apply to jobs faster than ever.
               </p>
               <div className="flex flex-col space-y-3">
                 <div className="flex items-center space-x-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary-100">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/20">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <span className="text-gray-700">Answer common application questions once</span>
+                  <span className="text-foreground">Answer common application questions once</span>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary-100">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/20">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <span className="text-gray-700">Upload your resume for quick access</span>
+                  <span className="text-foreground">Upload your resume for quick access</span>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary-100">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/20">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <span className="text-gray-700">Track all your job applications in one place</span>
+                  <span className="text-foreground">Track all your job applications in one place</span>
                 </div>
               </div>
             </div>

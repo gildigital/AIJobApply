@@ -20,16 +20,16 @@ const enhancedPlans = subscriptionPlans
     ...plan,
     features: plan.priority
       ? [
-          "AI Resume Enhancement",
-          "Personalized Cover Letters",
-          "Application Tracking",
-          "24/7 AI Assistant"
-        ]
+        "AI Resume Enhancement",
+        "Personalized Cover Letters",
+        "Application Tracking",
+        "24/7 AI Assistant"
+      ]
       : [
-          "AI Resume Enhancement",
-          "Personalized Cover Letters",
-          "Application Tracking"
-        ],
+        "AI Resume Enhancement",
+        "Personalized Cover Letters",
+        "Application Tracking"
+      ],
     isPopular: plan.id === "one_month_gold"
   }))
   .sort((a, b) => {
@@ -153,7 +153,7 @@ export default function PricingPage() {
 
     try {
       setIsLoading(true);
-      
+
       // Call the new /api/checkout endpoint that will return the checkout URL
       const response = await fetch('/api/checkout', {
         method: 'POST',
@@ -171,7 +171,7 @@ export default function PricingPage() {
       }
 
       const { url } = await response.json();
-      
+
       // Redirect to Stripe Checkout URL directly
       if (url) {
         window.location.href = url;
@@ -215,9 +215,9 @@ export default function PricingPage() {
 
         <div className="flex flex-col items-center mt-8 mb-12 max-w-lg mx-auto">
           <div className="flex items-center gap-2 mb-6">
-            <Checkbox 
-              id="terms" 
-              checked={agreeToTerms} 
+            <Checkbox
+              id="terms"
+              checked={agreeToTerms}
               onCheckedChange={(checked) => setAgreeToTerms(checked === true)}
             />
             <label htmlFor="terms" className="text-sm text-gray-700 dark:text-gray-300">
@@ -225,7 +225,7 @@ export default function PricingPage() {
             </label>
           </div>
 
-          <Button 
+          <Button
             onClick={handleCheckout}
             disabled={!selectedPlan || !agreeToTerms || isLoading}
             className="w-full h-14 text-lg font-medium bg-blue-600 hover:bg-blue-700 text-white"
@@ -243,13 +243,13 @@ export default function PricingPage() {
           <div className="flex items-center gap-2 mt-4 text-sm text-gray-500 dark:text-gray-400">
             <Shield className="h-4 w-4" />
             <span>Guaranteed safe & secure checkout</span>
-            <img src="https://cdn.stripe.com/v/checkout/button-logo@2x.png" alt="Powered by Stripe" className="h-5 ml-1" />
+            <img src="https://stripe.com/img/v3/home/twitter.png" alt="Powered by Stripe" className="h-5 ml-1" />
           </div>
         </div>
 
         <div className="max-w-3xl mx-auto mt-16 text-center">
           <h2 className="text-2xl font-bold mb-6">Why Choose AIJobApply?</h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="flex flex-col items-center">
               <div className="rounded-full bg-blue-100 dark:bg-blue-900 p-3 mb-4">
@@ -260,7 +260,7 @@ export default function PricingPage() {
                 Our AI tailors each application to the job description and your skills, increasing your chances.
               </p>
             </div>
-            
+
             <div className="flex flex-col items-center">
               <div className="rounded-full bg-green-100 dark:bg-green-900 p-3 mb-4">
                 <Zap className="h-6 w-6 text-green-600 dark:text-green-400" />
@@ -270,7 +270,7 @@ export default function PricingPage() {
                 Submit more applications in less time, with each one personalized to stand out to recruiters.
               </p>
             </div>
-            
+
             <div className="flex flex-col items-center">
               <div className="rounded-full bg-purple-100 dark:bg-purple-900 p-3 mb-4">
                 <Shield className="h-6 w-6 text-purple-600 dark:text-purple-400" />
