@@ -12,46 +12,57 @@ interface PaginationProps {
 export function Pagination({ currentPage, totalPages, onPageChange, className = "" }: PaginationProps) {
   if (totalPages <= 1) return null;
 
-  // Generate page numbers to display
-  const getPageNumbers = () => {
+  // Simple and reliable page number generation
+  const getPageNumbers = (): (number | string)[] => {
     const pages: (number | string)[] = [];
-    const maxPagesToShow = 5;
-
-    if (totalPages <= maxPagesToShow) {
-      // Show all pages if total is small
+    
+    // If we have 7 or fewer pages, show them all
+    if (totalPages <= 7) {
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i);
       }
-    } else {
-      // Always show first page
-      pages.push(1);
+      return pages;
+    }
 
-      if (currentPage <= 3) {
-        // Show pages 1, 2, 3, 4, ..., totalPages
-        for (let i = 2; i <= 4; i++) {
-          pages.push(i);
-        }
-        if (totalPages > 4) {
-          pages.push("...");
-          pages.push(totalPages);
-        }
-      } else if (currentPage >= totalPages - 2) {
-        // Show pages 1, ..., totalPages-3, totalPages-2, totalPages-1, totalPages
-        if (totalPages > 4) {
-          pages.push("...");
-        }
-        for (let i = Math.max(2, totalPages - 3); i <= totalPages; i++) {
-          pages.push(i);
-        }
-      } else {
-        // Show pages 1, ..., currentPage-1, currentPage, currentPage+1, ..., totalPages
-        pages.push("...");
-        for (let i = currentPage - 1; i <= currentPage + 1; i++) {
-          pages.push(i);
-        }
-        pages.push("...");
-        pages.push(totalPages);
+    // Always show page 1
+    pages.push(1);
+
+    // Determine the range around current page
+    let startPage = Math.max(2, currentPage - 1);
+    let endPage = Math.min(totalPages - 1, currentPage + 1);
+
+    // Adjust range if we're near the beginning
+    if (currentPage <= 3) {
+      startPage = 2;
+      endPage = 4;
+    }
+    
+    // Adjust range if we're near the end
+    if (currentPage >= totalPages - 2) {
+      startPage = totalPages - 3;
+      endPage = totalPages - 1;
+    }
+
+    // Add ellipsis before start if needed
+    if (startPage > 2) {
+      pages.push("...");
+    }
+
+    // Add the middle pages
+    for (let i = startPage; i <= endPage; i++) {
+      if (i !== 1 && i !== totalPages) { // Avoid duplicating first and last
+        pages.push(i);
       }
+    }
+
+    // Add ellipsis after end if needed
+    if (endPage < totalPages - 1) {
+      pages.push("...");
+    }
+
+    // Always show last page (if it's not page 1)
+    if (totalPages > 1) {
+      pages.push(totalPages);
     }
 
     return pages;
@@ -78,7 +89,7 @@ export function Pagination({ currentPage, totalPages, onPageChange, className = 
         {pageNumbers.map((page, index) => {
           if (page === "...") {
             return (
-              <span key={index} className="px-2 py-1 text-muted-foreground">
+              <span key={`ellipsis-${index}`} className="px-2 py-1 text-muted-foreground">
                 ...
               </span>
             );
@@ -89,7 +100,7 @@ export function Pagination({ currentPage, totalPages, onPageChange, className = 
 
           return (
             <Button
-              key={pageNum}
+              key={`page-${pageNum}`}
               variant={isCurrentPage ? "default" : "outline"}
               size="sm"
               onClick={() => onPageChange(pageNum)}
