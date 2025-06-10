@@ -243,7 +243,8 @@ export default function PricingPage() {
           <div className="flex items-center gap-2 mt-4 text-sm text-gray-500 dark:text-gray-400">
             <Shield className="h-4 w-4" />
             <span>Guaranteed safe & secure checkout</span>
-            <img src="https://stripe.com/img/v3/home/twitter.png" alt="Powered by Stripe" className="h-5 ml-1" />
+            <img src="https://stripe.com/img/v3/home/twitter.png" className="h-5 ml-1" />
+            <span>Powered by Stripe</span>
           </div>
         </div>
 

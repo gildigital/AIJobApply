@@ -46,13 +46,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Pencil, 
-  Trash2, 
-  ExternalLink, 
-  Loader2, 
-  RefreshCw, 
-  AlertCircle, 
+import {
+  Pencil,
+  Trash2,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  AlertCircle,
   Check,
   Clock
 } from "lucide-react";
@@ -61,6 +61,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Pagination } from "@/components/ui/pagination";
 
 interface Job {
   id: number;
@@ -80,6 +81,15 @@ interface Job {
   externalJobId?: string;
 }
 
+interface PaginatedJobsResponse {
+  jobs: Job[];
+  total: number;
+  page: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
 export default function JobTrackerTable() {
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -92,10 +102,28 @@ export default function JobTrackerTable() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [viewMatchDetailsJobId, setViewMatchDetailsJobId] = useState<number | null>(null);
   const [matchDetailsOpen, setMatchDetailsOpen] = useState(false);
-  
-  const { data: jobs, isLoading } = useQuery<Job[]>({
-    queryKey: ["/api/jobs"],
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
+  const { data: paginatedData, isLoading } = useQuery<PaginatedJobsResponse | Job[]>({
+    queryKey: ["/api/jobs", currentPage, itemsPerPage],
+    queryFn: async () => {
+      const response = await fetch(`/api/jobs?page=${currentPage}&limit=${itemsPerPage}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch jobs');
+      }
+      return response.json();
+    },
   });
+
+  // Handle both paginated and legacy response formats
+  const jobs = Array.isArray(paginatedData) ? paginatedData : paginatedData?.jobs || [];
+  const totalPages = Array.isArray(paginatedData) ? 1 : paginatedData?.totalPages || 1;
+  const totalJobs = Array.isArray(paginatedData) ? paginatedData.length : paginatedData?.total || 0;
 
   const updateJobMutation = useMutation({
     mutationFn: async (job: Job) => {
@@ -183,29 +211,33 @@ export default function JobTrackerTable() {
     }
   };
 
-  // Filter jobs based on selected filters
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  // Filter jobs based on selected filters (now applied to current page only)
   const filteredJobs = jobs?.filter((job) => {
     // Status filter (case-insensitive)
-    const statusMatches = statusFilter === "all" ? true 
+    const statusMatches = statusFilter === "all" ? true
       : job.status.toLowerCase() === statusFilter.toLowerCase();
-    
+
     // Application status filter
     const applicationStatusMatches = applicationStatusFilter === "all" ? true
       : job.applicationStatus?.toLowerCase() === applicationStatusFilter.toLowerCase();
-    
+
     // Source filter
     const sourceMatches = sourceFilter === "all" ? true
       : (job.source?.toLowerCase() === sourceFilter.toLowerCase());
-    
+
     // Match score filter
     const matchScoreMatches = !job.matchScore ? matchScoreFilter === 0
       : job.matchScore >= matchScoreFilter;
-    
+
     return statusMatches && applicationStatusMatches && sourceMatches && matchScoreMatches;
   });
 
-  // Get unique sources for the filter
-  const jobSources = jobs 
+  // Get unique sources for the filter (from current page only)
+  const jobSources = jobs
     ? Array.from(new Set(jobs.filter(job => job.source).map(job => job.source!)))
     : [];
 
@@ -237,10 +269,10 @@ export default function JobTrackerTable() {
         return <Badge variant="outline">{status}</Badge>;
     }
   };
-  
+
   const getApplicationStatusBadge = (status?: string) => {
     if (!status) return null;
-    
+
     switch (status.toLowerCase()) {
       case "pending":
         return (
@@ -274,10 +306,10 @@ export default function JobTrackerTable() {
         return null;
     }
   };
-  
+
   const getSourceBadge = (source?: string) => {
     if (!source) return null;
-    
+
     switch (source.toLowerCase()) {
       case "adzuna":
         return <Badge variant="outline" className="bg-blue-50">Adzuna</Badge>;
@@ -301,7 +333,7 @@ export default function JobTrackerTable() {
         </div>
       );
     }
-    
+
     return (
       <div className="rounded-md border">
         <Table>
@@ -322,9 +354,9 @@ export default function JobTrackerTable() {
                   <TableCell className="font-medium">
                     <div>
                       {job.link ? (
-                        <a 
-                          href={job.link} 
-                          target="_blank" 
+                        <a
+                          href={job.link}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:text-primary-600 flex items-center gap-1"
                         >
@@ -362,16 +394,16 @@ export default function JobTrackerTable() {
                             >
                               <Badge className={
                                 job.matchScore >= 80 ? "bg-green-100 text-green-800 hover:bg-green-100" :
-                                job.matchScore >= 60 ? "bg-blue-100 text-blue-800 hover:bg-blue-100" :
-                                "bg-gray-100 text-gray-800 hover:bg-gray-100"
+                                  job.matchScore >= 60 ? "bg-blue-100 text-blue-800 hover:bg-blue-100" :
+                                    "bg-gray-100 text-gray-800 hover:bg-gray-100"
                               }>
                                 {job.matchScore}%
                               </Badge>
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            {job.matchExplanation ? 
-                              "Click to view match details" : 
+                            {job.matchExplanation ?
+                              "Click to view match details" :
                               "No match details available"}
                           </TooltipContent>
                         </Tooltip>
@@ -407,7 +439,7 @@ export default function JobTrackerTable() {
                           </Tooltip>
                         </TooltipProvider>
                       )}
-                      
+
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -424,7 +456,7 @@ export default function JobTrackerTable() {
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-                      
+
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -448,8 +480,8 @@ export default function JobTrackerTable() {
             ) : (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center">
-                  {jobs && jobs.length > 0 
-                    ? "No jobs match the selected filter" 
+                  {jobs && jobs.length > 0
+                    ? "No jobs match the selected filter"
                     : "No jobs in your tracker yet. Add your first job above."}
                 </TableCell>
               </TableRow>
@@ -471,7 +503,7 @@ export default function JobTrackerTable() {
             </CardDescription>
           </div>
         </div>
-        
+
         {/* Filter Tabs */}
         <Tabs defaultValue="all" className="w-full">
           <div className="flex justify-between items-center mb-4">
@@ -481,7 +513,7 @@ export default function JobTrackerTable() {
               <TabsTrigger value="saved">Saved</TabsTrigger>
               <TabsTrigger value="failed">Failed</TabsTrigger>
             </TabsList>
-            
+
             <div className="flex space-x-2">
               {jobSources.length > 0 && (
                 <Select
@@ -499,7 +531,7 @@ export default function JobTrackerTable() {
                   </SelectContent>
                 </Select>
               )}
-              
+
               <Select
                 value={statusFilter}
                 onValueChange={setStatusFilter}
@@ -517,18 +549,18 @@ export default function JobTrackerTable() {
                   <SelectItem value="Error">Failed</SelectItem>
                 </SelectContent>
               </Select>
-              
+
               {jobs?.some(job => job.matchScore) && (
                 <div className="w-[200px] flex items-center space-x-2">
                   <Label htmlFor="match-score" className="whitespace-nowrap text-xs">
                     Match: {matchScoreFilter}%+
                   </Label>
-                  <Slider 
+                  <Slider
                     id="match-score"
-                    min={0} 
-                    max={100} 
+                    min={0}
+                    max={100}
                     step={10}
-                    value={[matchScoreFilter]} 
+                    value={[matchScoreFilter]}
                     onValueChange={(value) => setMatchScoreFilter(value[0])}
                     className="flex-1"
                   />
@@ -536,13 +568,13 @@ export default function JobTrackerTable() {
               )}
             </div>
           </div>
-          
+
           <TabsContent value="all">
             {renderJobsTable(filteredJobs)}
           </TabsContent>
           <TabsContent value="applied">
-            {renderJobsTable(filteredJobs?.filter(job => 
-              job.status.toLowerCase() === "applied" || 
+            {renderJobsTable(filteredJobs?.filter(job =>
+              job.status.toLowerCase() === "applied" ||
               job.applicationStatus?.toLowerCase() === "applied"
             ))}
           </TabsContent>
@@ -550,13 +582,30 @@ export default function JobTrackerTable() {
             {renderJobsTable(filteredJobs?.filter(job => job.status.toLowerCase() === "saved"))}
           </TabsContent>
           <TabsContent value="failed">
-            {renderJobsTable(filteredJobs?.filter(job => 
-              job.status.toLowerCase() === "error" || 
+            {renderJobsTable(filteredJobs?.filter(job =>
+              job.status.toLowerCase() === "error" ||
               job.status.toLowerCase() === "failed" ||
               job.applicationStatus?.toLowerCase() === "failed"
             ))}
           </TabsContent>
         </Tabs>
+
+        {/* Pagination and Summary */}
+        {totalPages > 1 && (
+          <div className="flex flex-col items-center space-y-4 mt-6">
+            {/* Summary */}
+            <div className="text-sm text-muted-foreground">
+              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalJobs)} of {totalJobs} jobs
+            </div>
+
+            {/* Pagination */}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={handlePageChange}
+            />
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         {/* Edit Job Dialog */}
@@ -577,7 +626,7 @@ export default function JobTrackerTable() {
                   <Input
                     id="job-title"
                     value={editingJob.jobTitle}
-                    onChange={(e) => setEditingJob({...editingJob, jobTitle: e.target.value})}
+                    onChange={(e) => setEditingJob({ ...editingJob, jobTitle: e.target.value })}
                     className="col-span-3"
                   />
                 </div>
@@ -588,7 +637,7 @@ export default function JobTrackerTable() {
                   <Input
                     id="company"
                     value={editingJob.company}
-                    onChange={(e) => setEditingJob({...editingJob, company: e.target.value})}
+                    onChange={(e) => setEditingJob({ ...editingJob, company: e.target.value })}
                     className="col-span-3"
                   />
                 </div>
@@ -599,7 +648,7 @@ export default function JobTrackerTable() {
                   <Input
                     id="link"
                     value={editingJob.link || ""}
-                    onChange={(e) => setEditingJob({...editingJob, link: e.target.value})}
+                    onChange={(e) => setEditingJob({ ...editingJob, link: e.target.value })}
                     className="col-span-3"
                   />
                 </div>
@@ -609,7 +658,7 @@ export default function JobTrackerTable() {
                   </Label>
                   <Select
                     value={editingJob.status}
-                    onValueChange={(value) => setEditingJob({...editingJob, status: value})}
+                    onValueChange={(value) => setEditingJob({ ...editingJob, status: value })}
                   >
                     <SelectTrigger id="status" className="col-span-3">
                       <SelectValue placeholder="Select a status" />
@@ -631,7 +680,7 @@ export default function JobTrackerTable() {
                   <Input
                     id="notes"
                     value={editingJob.notes || ""}
-                    onChange={(e) => setEditingJob({...editingJob, notes: e.target.value})}
+                    onChange={(e) => setEditingJob({ ...editingJob, notes: e.target.value })}
                     className="col-span-3"
                   />
                 </div>
@@ -641,8 +690,8 @@ export default function JobTrackerTable() {
               <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 onClick={handleUpdateJob}
                 disabled={updateJobMutation.isPending}
               >
@@ -670,7 +719,7 @@ export default function JobTrackerTable() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction 
+              <AlertDialogAction
                 onClick={handleConfirmDelete}
                 className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
                 disabled={deleteJobMutation.isPending}
@@ -687,7 +736,7 @@ export default function JobTrackerTable() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-        
+
         {/* Match Details Dialog */}
         <Dialog open={matchDetailsOpen} onOpenChange={setMatchDetailsOpen}>
           <DialogContent className="sm:max-w-[550px] max-h-[80vh] overflow-y-auto">
@@ -709,14 +758,14 @@ export default function JobTrackerTable() {
                         <div className="flex items-center mt-2">
                           <Badge className={
                             job.matchScore && job.matchScore >= 80 ? "bg-green-100 text-green-800 hover:bg-green-100" :
-                            job.matchScore && job.matchScore >= 60 ? "bg-blue-100 text-blue-800 hover:bg-blue-100" :
-                            "bg-gray-100 text-gray-800 hover:bg-gray-100"
+                              job.matchScore && job.matchScore >= 60 ? "bg-blue-100 text-blue-800 hover:bg-blue-100" :
+                                "bg-gray-100 text-gray-800 hover:bg-gray-100"
                           }>
                             {job.matchScore}% Match
                           </Badge>
                         </div>
                       </div>
-                      
+
                       <div className="border-t pt-4">
                         <h4 className="font-medium mb-2">Why this job matches your profile:</h4>
                         {job.matchExplanation ? (

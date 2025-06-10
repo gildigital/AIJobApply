@@ -31,39 +31,41 @@ export interface IStorage {
   getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, data: Partial<User>): Promise<User | undefined>;
-  
+
   // User Profile Methods
   getUserProfile(userId: number): Promise<UserProfile | undefined>;
   createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
   updateUserProfile(userId: number, data: Partial<UserProfile>): Promise<UserProfile | undefined>;
   calculateProfileCompleteness(userId: number): Promise<number>;
-  
+
   // Portfolio Methods
   getUserPortfolios(userId: number): Promise<Portfolio[]>;
   getPortfolio(id: number): Promise<Portfolio | undefined>;
   createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio>;
   updatePortfolio(id: number, data: Partial<Portfolio>): Promise<Portfolio | undefined>;
   deletePortfolio(id: number): Promise<boolean>;
-  
+
   // Application Answers Methods
   getApplicationAnswers(userId: number): Promise<ApplicationAnswer[]>;
   createApplicationAnswer(answer: InsertApplicationAnswer): Promise<ApplicationAnswer>;
   updateApplicationAnswer(id: number, data: Partial<ApplicationAnswer>): Promise<ApplicationAnswer | undefined>;
   deleteApplicationAnswer(id: number): Promise<boolean>;
-  
+
   // Resume Methods
   getResume(userId: number): Promise<Resume | undefined>;
   createResume(resume: InsertResume): Promise<Resume>;
   updateResume(userId: number, data: Partial<InsertResume>): Promise<Resume | undefined>;
-  
+
   // Job Tracker Methods
   getJobs(userId: number): Promise<JobTracker[]>;
+  getJobsPaginated(userId: number, page: number, limit: number): Promise<{ jobs: JobTracker[], total: number }>;
+  getJobsCount(userId: number): Promise<number>;
   getJob(id: number): Promise<JobTracker | undefined>;
   createJob(job: InsertJobTracker): Promise<JobTracker>;
   updateJob(id: number, data: Partial<JobTracker>): Promise<JobTracker | undefined>;
   deleteJob(id: number): Promise<boolean>;
   getJobsAppliedToday(userId: number, startDate: Date): Promise<number>;
-  
+
   // Job Queue Methods
   enqueueJob(job: InsertJobQueue): Promise<JobQueue>;
   enqueueJobs(jobs: InsertJobQueue[]): Promise<JobQueue[]>;
@@ -72,7 +74,7 @@ export interface IStorage {
   getQueuedJobsForJobId(jobId: number): Promise<JobQueue[]>;
   updateQueuedJob(id: number, data: Partial<JobQueue>): Promise<JobQueue | undefined>;
   dequeueJob(id: number): Promise<boolean>;
-  
+
   // Job Links Methods
   addJobLinks(links: InsertJobLinks[]): Promise<JobLinks[]>;
   getJobLinksForUser(userId: number, status?: string): Promise<JobLinks[]>;
@@ -80,7 +82,7 @@ export interface IStorage {
   updateJobLink(id: number, data: Partial<JobLinks>): Promise<JobLinks | undefined>;
   markJobLinkAsProcessed(id: number, jobTrackerId?: number): Promise<JobLinks | undefined>;
   getPendingJobLinksCount(userId: number): Promise<number>;
-  
+
   // Session Store
   sessionStore: any;
 }
@@ -89,9 +91,9 @@ export class DatabaseStorage implements IStorage {
   sessionStore: any;
 
   constructor() {
-    this.sessionStore = new PostgresSessionStore({ 
-      pool, 
-      createTableIfMissing: true 
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true
     });
   }
 
@@ -100,7 +102,7 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
   }
-  
+
   async getAllUsers(): Promise<User[]> {
     return await db.select().from(users);
   }
@@ -114,7 +116,7 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user || undefined;
   }
-  
+
   async getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.stripeCustomerId, stripeCustomerId));
     return user || undefined;
@@ -215,6 +217,26 @@ export class DatabaseStorage implements IStorage {
       .where(eq(jobTracker.userId, userId));
   }
 
+  async getJobsPaginated(userId: number, page: number, limit: number): Promise<{ jobs: JobTracker[], total: number }> {
+    const total = await this.getJobsCount(userId);
+    const jobs = await db
+      .select()
+      .from(jobTracker)
+      .where(eq(jobTracker.userId, userId))
+      .orderBy(desc(jobTracker.createdAt))
+      .limit(limit)
+      .offset((page - 1) * limit);
+    return { jobs, total };
+  }
+
+  async getJobsCount(userId: number): Promise<number> {
+    const [result] = await db
+      .select({ count: count() })
+      .from(jobTracker)
+      .where(eq(jobTracker.userId, userId));
+    return result?.count || 0;
+  }
+
   async getJob(id: number): Promise<JobTracker | undefined> {
     const [job] = await db
       .select()
@@ -239,20 +261,20 @@ export class DatabaseStorage implements IStorage {
   async updateJob(id: number, data: Partial<JobTracker>): Promise<JobTracker | undefined> {
     try {
       console.log("Updating job:", id);
-      
+
       // Add the updated timestamp
       const updateData = {
         ...data,
         updatedAt: new Date()
       };
-      
+
       // Use standard Drizzle update method
       const [updatedJob] = await db
         .update(jobTracker)
         .set(updateData)
         .where(eq(jobTracker.id, id))
         .returning();
-      
+
       console.log("Update result:", updatedJob ? "Success" : "No job updated");
       return updatedJob || undefined;
     } catch (error) {
@@ -265,35 +287,35 @@ export class DatabaseStorage implements IStorage {
     try {
       // First, check for and delete any related records in the job queue table
       const queuedJobs = await this.getQueuedJobsForJobId(id);
-      
+
       // Delete any related queue entries first
       if (queuedJobs.length > 0) {
         for (const queuedJob of queuedJobs) {
           await this.dequeueJob(queuedJob.id);
         }
       }
-      
+
       // Delete any related auto-apply logs
       await db
         .delete(autoApplyLogs)
         .where(eq(autoApplyLogs.jobId, id));
-      
+
       // Now delete the actual job record
       await db
         .delete(jobTracker)
         .where(eq(jobTracker.id, id));
-      
+
       return true;
     } catch (error) {
       console.error("Error in deleteJob:", error);
       throw error;
     }
   }
-  
+
   async getJobsAppliedToday(userId: number, startDate: Date): Promise<number> {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + 1);
-    
+
     // Get count of jobs with status 'Applied' created today
     const result = await db
       .select({ count: count() })
@@ -306,7 +328,7 @@ export class DatabaseStorage implements IStorage {
           lt(jobTracker.createdAt, endDate)
         )
       );
-    
+
     return result[0]?.count || 0;
   }
 
@@ -380,7 +402,7 @@ export class DatabaseStorage implements IStorage {
       ...data,
       updatedAt: data.updatedAt || new Date() // Use provided timestamp or current time
     };
-    
+
     const [updatedJob] = await db
       .update(jobQueue)
       .set(updateData)
@@ -395,7 +417,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(jobQueue.id, id));
     return true;
   }
-  
+
   // User Profile Methods
   async getUserProfile(userId: number): Promise<UserProfile | undefined> {
     const [profile] = await db
@@ -421,10 +443,10 @@ export class DatabaseStorage implements IStorage {
       };
       return await this.updateUserProfile(profile.userId, existingProfileData as any);
     }
-    
+
     // Calculate initial profile completeness
     const completeness = await this.calculateInitialProfileCompleteness(profile);
-    
+
     // Create new profile with date conversion for dateOfBirth
     const preparedProfile = {
       ...profile,
@@ -439,7 +461,7 @@ export class DatabaseStorage implements IStorage {
       .insert(userProfiles)
       .values(preparedProfile as any)
       .returning();
-    
+
     return newProfile;
   }
 
@@ -461,11 +483,11 @@ export class DatabaseStorage implements IStorage {
       .set(preparedData as any)
       .where(eq(userProfiles.userId, userId))
       .returning();
-    
+
     if (!updatedProfile) {
       throw new Error(`Failed to update profile for user ${userId}`);
     }
-    
+
     return updatedProfile;
   }
 
@@ -475,7 +497,7 @@ export class DatabaseStorage implements IStorage {
       // Exclude system fields and userId from calculation
       return !['userId', 'createdAt', 'updatedAt', 'profileCompleteness'].includes(key);
     });
-    
+
     // Count non-empty fields
     const filledFields = fields.filter(([key, value]) => {
       if (Array.isArray(value)) {
@@ -483,23 +505,23 @@ export class DatabaseStorage implements IStorage {
       }
       return value !== null && value !== undefined && value !== '';
     });
-    
+
     // Calculate percentage
     return Math.round((filledFields.length / fields.length) * 100);
   }
 
   async calculateProfileCompleteness(userId: number): Promise<number> {
     const profile = await this.getUserProfile(userId);
-    
+
     if (!profile) {
       return 0;
     }
-    
+
     const fields = Object.entries(profile).filter(([key, value]) => {
       // Exclude system fields and userId from calculation
       return !['id', 'userId', 'createdAt', 'updatedAt', 'profileCompleteness'].includes(key);
     });
-    
+
     // Count non-empty fields
     const filledFields = fields.filter(([key, value]) => {
       if (Array.isArray(value)) {
@@ -507,11 +529,11 @@ export class DatabaseStorage implements IStorage {
       }
       return value !== null && value !== undefined && value !== '';
     });
-    
+
     // Calculate percentage
     return Math.round((filledFields.length / fields.length) * 100);
   }
-  
+
   // Portfolio Methods
   async getUserPortfolios(userId: number): Promise<Portfolio[]> {
     return await db
@@ -578,7 +600,7 @@ export class DatabaseStorage implements IStorage {
         .values(preparedLinks as any[])
         .onConflictDoNothing() // Ignore duplicates based on unique constraint
         .returning();
-      
+
       return insertedLinks;
     } catch (error) {
       // If conflict happens, still return empty array rather than throwing
@@ -595,7 +617,7 @@ export class DatabaseStorage implements IStorage {
         .where(and(eq(jobLinks.userId, userId), eq(jobLinks.status, status)))
         .orderBy(desc(jobLinks.priority), asc(jobLinks.createdAt));
     }
-    
+
     return await db
       .select()
       .from(jobLinks)
@@ -623,7 +645,7 @@ export class DatabaseStorage implements IStorage {
       .set(data)
       .where(eq(jobLinks.id, id))
       .returning();
-    
+
     return updatedLink || undefined;
   }
 
@@ -646,7 +668,7 @@ export class DatabaseStorage implements IStorage {
           eq(jobLinks.status, 'pending')
         )
       );
-    
+
     return result?.count || 0;
   }
 }

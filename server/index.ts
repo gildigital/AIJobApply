@@ -25,15 +25,11 @@ const log = console.log; // Use standard console.log directly
 const app: Express = express();
 
 // --- CORS Configuration & Handling ---
-const configuredOrigin = process.env.ALLOWED_ORIGIN;
-// log(
-//   `[CORS DEBUG] Value of process.env.ALLOWED_ORIGIN from Railway env: "${configuredOrigin}"`
-// );
+const isDevelopment = process.env.NODE_ENV === "development";
+const devOrigin = process.env.FRONTEND_DEV_ORIGIN;
+const prodOrigin = process.env.ALLOWED_ORIGIN;
 
-const corsOriginToUse = configuredOrigin || "*"; // This should resolve to your Vercel URL
-// log(
-//   `[CORS DEBUG] Effective origin value being used for CORS: "${corsOriginToUse}"`
-// );
+const corsOriginToUse = isDevelopment ? devOrigin : prodOrigin;
 
 const corsOptionsForActualRequests = {
   origin: corsOriginToUse,
@@ -50,7 +46,7 @@ app.options("*", (req: Request, res: Response) => {
   // );
 
   // Check if the request origin is the one we want to allow for credentialed requests
-  if (req.headers.origin === corsOriginToUse) {
+  if (req.headers.origin === corsOriginToUse && corsOriginToUse) {
     res.setHeader("Access-Control-Allow-Origin", corsOriginToUse);
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader(
@@ -207,7 +203,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     }
 
     // Set CORS headers for error responses too, so frontend can read the error body
-    if (req.headers.origin === corsOriginToUse) {
+    if (req.headers.origin === corsOriginToUse && corsOriginToUse) {
       res.setHeader("Access-Control-Allow-Origin", corsOriginToUse);
       res.setHeader("Access-Control-Allow-Credentials", "true");
     }
