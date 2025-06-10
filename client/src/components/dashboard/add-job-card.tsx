@@ -55,7 +55,10 @@ export default function AddJobCard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ 
-        predicate: (query) => query.queryKey[0] === "/api/jobs"
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return key === "/api/jobs" || (typeof key === "string" && key.startsWith("/api/jobs?"));
+        }
       });
       toast({
         title: "Job added",

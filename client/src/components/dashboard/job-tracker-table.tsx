@@ -107,17 +107,10 @@ export default function JobTrackerTable() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
-  const { data: paginatedData, isLoading } = useQuery<PaginatedJobsResponse | Job[]>({
-    queryKey: ["/api/jobs", currentPage, itemsPerPage],
-    queryFn: async () => {
-      const response = await fetch(`/api/jobs?page=${currentPage}&limit=${itemsPerPage}`, {
-        credentials: 'include'
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch jobs');
-      }
-      return response.json();
-    },
+  const { data: paginatedData, isLoading, error } = useQuery<PaginatedJobsResponse | Job[]>({
+    queryKey: [`/api/jobs?page=${currentPage}&limit=${itemsPerPage}`],
+    retry: 1, // Retry once on failure
+    refetchOnWindowFocus: false,
   });
 
   // Handle both paginated and legacy response formats
@@ -132,7 +125,10 @@ export default function JobTrackerTable() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ 
-        predicate: (query) => query.queryKey[0] === "/api/jobs"
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return key === "/api/jobs" || (typeof key === "string" && key.startsWith("/api/jobs?"));
+        }
       });
       toast({
         title: "Job updated",
@@ -155,7 +151,10 @@ export default function JobTrackerTable() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ 
-        predicate: (query) => query.queryKey[0] === "/api/jobs"
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return key === "/api/jobs" || (typeof key === "string" && key.startsWith("/api/jobs?"));
+        }
       });
       toast({
         title: "Job deleted",
@@ -179,7 +178,10 @@ export default function JobTrackerTable() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ 
-        predicate: (query) => query.queryKey[0] === "/api/jobs"
+        predicate: (query) => {
+          const key = query.queryKey[0] as string;
+          return key === "/api/jobs" || (typeof key === "string" && key.startsWith("/api/jobs?"));
+        }
       });
       toast({
         title: "Application resubmitted",
@@ -340,6 +342,25 @@ export default function JobTrackerTable() {
       );
     }
 
+    // Show error if query failed
+    if (error) {
+      return (
+        <div className="text-center py-8">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <p className="text-red-600 font-medium">Failed to load jobs</p>
+          <p className="text-sm text-gray-500 mt-2">{String(error)}</p>
+          <Button 
+            variant="outline" 
+            className="mt-4"
+            onClick={() => window.location.reload()}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        </div>
+      );
+    }
+
     return (
       <div className="rounded-md border">
         <Table>
@@ -485,10 +506,35 @@ export default function JobTrackerTable() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
-                  {jobs && jobs.length > 0
-                    ? "No jobs match the selected filter"
-                    : "No jobs in your tracker yet. Add your first job above."}
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  {isLoading ? (
+                    <div className="flex items-center justify-center">
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Loading jobs...
+                    </div>
+                  ) : error ? (
+                    <div className="text-red-600">
+                      <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+                      <p>Failed to load jobs: {String(error)}</p>
+                    </div>
+                  ) : (
+                    <div>
+                      {totalJobs > 0 ? (
+                        <div>
+                          <p>No jobs match the current filters.</p>
+                          <p className="text-sm mt-1">
+                            Showing page {currentPage} of {totalPages} ({totalJobs} total jobs)
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <p>No jobs in your tracker yet.</p>
+                          <p className="text-sm mt-2">Add your first job using the form above, or</p>
+                          <p className="text-sm">use the "Find Jobs" feature to discover opportunities.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </TableCell>
               </TableRow>
             )}
