@@ -54,7 +54,9 @@ export default function AddJobCard() {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => query.queryKey[0] === "/api/jobs"
+      });
       toast({
         title: "Job added",
         description: "The job has been added to your tracker.",

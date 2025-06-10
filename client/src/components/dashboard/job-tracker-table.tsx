@@ -131,7 +131,9 @@ export default function JobTrackerTable() {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => query.queryKey[0] === "/api/jobs"
+      });
       toast({
         title: "Job updated",
         description: "The job has been updated successfully.",
@@ -152,7 +154,9 @@ export default function JobTrackerTable() {
       await apiRequest("DELETE", `/api/jobs/${jobId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => query.queryKey[0] === "/api/jobs"
+      });
       toast({
         title: "Job deleted",
         description: "The job has been removed from your tracker.",
@@ -174,7 +178,9 @@ export default function JobTrackerTable() {
       return await res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => query.queryKey[0] === "/api/jobs"
+      });
       toast({
         title: "Application resubmitted",
         description: data.message || "The application has been resubmitted.",
