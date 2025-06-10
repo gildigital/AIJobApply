@@ -1785,11 +1785,12 @@ export class WorkableScraper {
       ];
 
       // Get user profile info
-      // Start with a base score in each category
-      let keywordMatchScore = 65;
-      let roleAlignmentScore = 65;
-      let experienceLevelScore = 65;
-      let educationScore = 65;
+      // Start with conservative base scores in each category
+      // These will be increased based on actual matches found
+      let keywordMatchScore = 20; // Conservative base for keyword matching
+      let roleAlignmentScore = 25; // Slightly higher base for role alignment
+      let experienceLevelScore = 30; // Moderate base for experience matching
+      let educationScore = 25; // Conservative base for education matching
 
       // Look for role alignment in the job title
       const lowercaseTitle = jobInfo.title.toLowerCase();
@@ -1901,8 +1902,8 @@ export class WorkableScraper {
       return Math.min(98, Math.round(totalScore));
     } catch (error) {
       console.error("Error calculating match score:", error);
-      // Return a default score if calculation fails
-      return 75;
+      // Return a conservative score if calculation fails
+      return 35;
     }
   }
 
@@ -2349,6 +2350,7 @@ export class WorkableScraper {
         applyUrl: "https://apply.workable.com/balto/j/9BE3FA1FB7/",
         location: "Remote",
         source: "workable",
+        externalJobId: "9BE3FA1FB7",
         matchScore: 75,
       },
       {
@@ -2359,6 +2361,7 @@ export class WorkableScraper {
         applyUrl: "https://apply.workable.com/aptible/j/6F85714800/",
         location: "Remote",
         source: "workable",
+        externalJobId: "6F85714800",
         matchScore: 70,
       },
     ];

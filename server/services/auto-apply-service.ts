@@ -289,14 +289,26 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
           job.description = desc;
         }
       }
-      // Score the job fit
-      const score = await scoreJobFit(user, job);
+      // Score the job fit using AI-powered matching
+      let matchResult;
+      try {
+        const { scoreJobFit: aiScoreJobFit } = await import('./job-matching-service.js');
+        matchResult = await aiScoreJobFit(user.id, job);
+        console.log(`AI score for ${job.jobTitle}: ${matchResult.matchScore}% - Reasons: ${matchResult.reasons.join(', ')}`);
+      } catch (error) {
+                 console.error("Error with AI job scoring, falling back to basic scoring:", error);
+         const fallbackScore = await scoreJobFit(user, job);
+         matchResult = {
+           matchScore: fallbackScore,
+           reasons: ["Scoring calculated using keyword matching", "Upload a resume for AI-powered matching"]
+         };
+      }
       
       // Log the evaluation
       await createAutoApplyLog({
         userId,
         status: "Evaluating",
-        message: `Evaluating match for ${job.company} - ${job.jobTitle} (Score: ${score})`
+        message: `Evaluating match for ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}%)`
       });
 
       // Get user's preferred match score threshold or use default
@@ -304,7 +316,7 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
       const matchScoreThreshold = profile?.matchScoreThreshold || 70;
       
       // Only apply if the score meets or exceeds the threshold
-      if (score >= matchScoreThreshold) {
+      if (matchResult.matchScore >= matchScoreThreshold) {
         try {
           // Submit the application based on job source
           const result = await submitApplication(user, job);
@@ -342,9 +354,9 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
           const jobRecord = await addJobToTracker(
             userId, 
             job, 
-            score, 
+            matchResult.matchScore, 
             status,
-            undefined, // Let the AI scoring handle match explanation
+            matchResult.reasons.join('\n'),
             applicationStatus // Pass the application status
           );
           
@@ -370,9 +382,9 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
             const jobRecord = await addJobToTracker(
               userId, 
               job, 
-              score, 
+              matchResult.matchScore, 
               "Error", 
-              undefined, 
+              matchResult.reasons.join('\n'), 
               "failed"
             );
             
@@ -397,9 +409,9 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
         const jobRecord = await addJobToTracker(
           userId, 
           job, 
-          score, 
+          matchResult.matchScore, 
           "Skipped", 
-          undefined, 
+          matchResult.reasons.join('\n'), 
           "skipped"
         );
         
@@ -407,7 +419,7 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
           userId,
           jobId: jobRecord.id,
           status: "Skipped",
-          message: `Skipped job at ${job.company} - ${job.jobTitle} (Score: ${score}, Threshold: ${matchScoreThreshold})`
+          message: `Skipped job at ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}, Threshold: ${matchScoreThreshold})`
         });
       }
     }
@@ -580,30 +592,42 @@ async function checkForExistingApplication(userId: number, job: JobListing): Pro
  */
 export async function scoreJobFit(user: any, job: JobListing): Promise<number> {
   try {
-    // Get the user's resume content
-    const resume = await storage.getResume(user.id);
-    if (!resume || !resume.parsedText) {
-      // Without resume data, we return a default score
-      return 50;
-    }
-
-    // Extract keywords from both resume and job description
-    const resumeKeywords = extractKeywords(resume.parsedText);
-    const jobKeywords = extractKeywords(job.description);
+    // Use the AI-powered job scoring system for more accurate results
+    const { scoreJobFit: aiScoreJobFit } = await import('./job-matching-service.js');
     
-    // Calculate the match score
-    return calculateMatchScore(resumeKeywords, jobKeywords, job.description, job.jobTitle);
+    console.log(`Using AI-powered scoring for ${job.jobTitle} at ${job.company}`);
+    const matchResult = await aiScoreJobFit(user.id, job);
+    
+    console.log(`AI score for ${job.jobTitle}: ${matchResult.matchScore}% - Reasons: ${matchResult.reasons.join(', ')}`);
+    return matchResult.matchScore;
   } catch (error) {
-    console.error("Error calculating job match score:", error);
+    console.error("Error with AI job scoring, falling back to keyword matching:", error);
     
-    // Fallback to a default score if scoring fails
-    const baseScore = 70; // Start with a decent chance of matching
-    const randomVariation = Math.floor(Math.random() * 20); // +/- up to 20 points
-    
-    // Add the variation (can be positive or negative)
-    const finalScore = Math.min(100, Math.max(0, baseScore + randomVariation - 10));
-    
-    return finalScore;
+    // Fallback to keyword matching if AI scoring fails
+    try {
+      // Get the user's resume content
+      const resume = await storage.getResume(user.id);
+      if (!resume || !resume.parsedText) {
+        // Without resume data, we return a low score to encourage resume upload
+        console.log("No resume found, returning low score to encourage resume upload");
+        return 25;
+      }
+
+      // Extract keywords from both resume and job description
+      const resumeKeywords = extractKeywords(resume.parsedText);
+      const jobKeywords = extractKeywords(job.description);
+      
+      // Calculate the match score using improved algorithm
+      const score = calculateMatchScore(resumeKeywords, jobKeywords, job.description, job.jobTitle);
+      console.log(`Fallback keyword score for ${job.jobTitle}: ${score}%`);
+      return score;
+    } catch (fallbackError) {
+      console.error("Error in fallback scoring algorithm:", fallbackError);
+      
+      // Last resort: return a low score
+      console.log("All scoring methods failed, returning minimal score");
+      return 15;
+    }
   }
 }
 
@@ -642,17 +666,30 @@ function calculateMatchScore(
   jobDescription: string,
   jobTitle: string
 ): number {
-  // Base factors for scoring
-  let score = 50; // Start with a neutral score
+  // If we have no keywords from either source, return a low score
+  if (resumeKeywords.length === 0 && jobKeywords.length === 0) {
+    console.log("No keywords found in resume or job description");
+    return 20;
+  }
   
-  // 1. Calculate keyword match percentage
+  // If we have no resume keywords, return a very low score
+  if (resumeKeywords.length === 0) {
+    console.log("No keywords found in resume");
+    return 15;
+  }
+  
+  // If we have no job keywords, we can't properly score but give a moderate score
+  if (jobKeywords.length === 0) {
+    console.log("No keywords found in job description, using moderate score");
+    return 40;
+  }
+
+  // Base factors for scoring
+  let score = 0; // Start with zero and build up
+  
+  // 1. Calculate keyword match percentage (60% weight)
   const uniqueJobKeywords = Array.from(new Set(jobKeywords));
   const uniqueResumeKeywords = Array.from(new Set(resumeKeywords));
-  
-  // If we have 0 keywords, return a moderate score
-  if (uniqueJobKeywords.length === 0) {
-    return 65; // Default score when we can't extract keywords
-  }
   
   // Count keywords that match between resume and job
   const matchingKeywords = uniqueResumeKeywords.filter(keyword => 
@@ -664,24 +701,35 @@ function calculateMatchScore(
     (matchingKeywords.length / uniqueJobKeywords.length) * 100
   );
   
-  // 2. Adjust score based on keyword match percentage (40% weight)
-  score = Math.round(matchPercentage * 0.4);
+  // Keyword matching is the primary factor (60% weight)
+  score = Math.round(matchPercentage * 0.6);
   
-  // 3. Boost score if job title contains skills found in resume (30% weight)
+  // 2. Boost score if job title contains skills found in resume (25% weight)
   const jobTitleLower = jobTitle.toLowerCase();
   const resumeSkillsInTitle = uniqueResumeKeywords.filter(skill => 
     jobTitleLower.includes(skill)
   );
   
   if (resumeSkillsInTitle.length > 0) {
-    // More matching skills in title = higher boost
-    const titleBoost = Math.min(30, resumeSkillsInTitle.length * 10);
+    // More matching skills in title = higher boost (up to 25 points)
+    const titleBoost = Math.min(25, resumeSkillsInTitle.length * 8);
     score += titleBoost;
   }
   
-  // 4. Add some variance for jobs with similar scores (10% weight)
-  const variance = Math.floor(Math.random() * 10);
-  score += variance;
+  // 3. Add base compatibility score (15% weight) 
+  // Based on having any technical keywords at all
+  if (matchingKeywords.length > 0) {
+    const baseCompatibility = Math.min(15, matchingKeywords.length * 3);
+    score += baseCompatibility;
+  }
+  
+  // 4. Small bonus for having many resume keywords (shows experience depth)
+  if (uniqueResumeKeywords.length >= 5) {
+    score += 5; // Experience depth bonus
+  }
+  
+  // Log the scoring breakdown for debugging
+  console.log(`Scoring breakdown: Base match: ${Math.round(matchPercentage * 0.6)}, Title match: ${resumeSkillsInTitle.length > 0 ? Math.min(25, resumeSkillsInTitle.length * 8) : 0}, Keywords: ${matchingKeywords.length}/${uniqueJobKeywords.length}`);
   
   // Ensure score stays between 0-100
   return Math.min(100, Math.max(0, score));
