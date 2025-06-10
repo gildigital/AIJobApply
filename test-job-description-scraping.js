@@ -38,10 +38,23 @@ async function testJobDescriptionScraping() {
       
       if (data.success) {
         console.log(`  ✅ Success!`);
-        console.log(`     Title: ${data.title}`);
-        console.log(`     Company: ${data.company}`);
-        console.log(`     Location: ${data.location} ${data.isRemote ? '(Remote)' : ''}`);
+        console.log(`     Title: "${data.title}"`);
+        console.log(`     Company: "${data.company}"`);
+        console.log(`     Location: "${data.location}" ${data.isRemote ? '(Remote)' : ''}`);
         console.log(`     Description: ${data.description.length} characters`);
+        
+        // Validate extraction quality
+        if (data.title && !data.title.includes('|') && !data.title.includes('Jobs By Workable')) {
+          console.log(`     ✅ Job title extracted cleanly`);
+        } else {
+          console.log(`     ⚠️  Job title may need cleaning: "${data.title}"`);
+        }
+        
+        if (data.company && !data.company.includes('|') && !data.company.includes('Jobs By Workable')) {
+          console.log(`     ✅ Company name extracted cleanly`);
+        } else {
+          console.log(`     ⚠️  Company name may need cleaning: "${data.company}"`);
+        }
         
         if (data.description.length > 100) {
           console.log(`     Preview: ${data.description.substring(0, 100)}...`);
