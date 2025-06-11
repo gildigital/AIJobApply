@@ -40,7 +40,7 @@ export function registerWorkableDirectFetch(app: Express) {
           },
           body: JSON.stringify({ url: String(url) }),
           // Timeout for the worker call
-          signal: AbortSignal.timeout(45000) // 45 second timeout
+          signal: AbortSignal.timeout(70000) // 70 second timeout - longer than worker queue timeout
         });
         
         if (!workerResponse.ok) {
