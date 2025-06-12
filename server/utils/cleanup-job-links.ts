@@ -125,6 +125,6 @@ export async function cleanupJobLinks(): Promise<void> {
 }
 
 // If run directly, invoke cleanup
-if (require.main === module) {
+if (process.argv[1] === import.meta.url) {
   cleanupJobLinks().then(() => process.exit(0));
 }
