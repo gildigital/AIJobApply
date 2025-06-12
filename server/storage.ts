@@ -15,7 +15,7 @@ import { jobLinks } from "./local-schema.js";
 type JobLinks = typeof jobLinks.$inferSelect;
 type InsertJobLinks = typeof jobLinks.$inferInsert;
 import { db } from "./db.js";
-import { eq, and, gte, lt, count, desc, asc, or } from "drizzle-orm";
+import { eq, and, gte, gt, lt, count, desc, asc, or } from "drizzle-orm";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db.js";
@@ -632,10 +632,14 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(jobLinks.userId, userId),
-          eq(jobLinks.status, 'pending')
+          eq(jobLinks.status, 'pending'),
+          gt(jobLinks.priority, 0) // skip any links we’ve demoted
         )
       )
-      .orderBy(desc(jobLinks.priority), asc(jobLinks.createdAt))
+      .orderBy(
+        desc(jobLinks.priority), // highest-priority first
+        asc(jobLinks.createdAt) // then oldest first
+      )
       .limit(limit);
   }
 

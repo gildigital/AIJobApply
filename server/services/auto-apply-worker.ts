@@ -13,6 +13,7 @@ import {
   JobListing,
   scoreJobFit,
 } from "./auto-apply-service.js";
+import { cleanupJobLinks } from '../utils/cleanup-job-links.js';
 import { JobQueue, JobTracker, User, jobQueue } from "@shared/schema.js";
 import { db } from "../db.js";
 import { eq } from "drizzle-orm";
@@ -44,6 +45,13 @@ const DAILY_LIMITS = {
 // Worker state
 let isWorkerRunning = false;
 let workerInterval: NodeJS.Timeout | null = null;
+
+// Track the last calendar day (UTC) when we ran cleanup
+let lastCleanupDate = getUTCDateString(new Date());
+
+function getUTCDateString(d: Date): string {
+  return d.toISOString().slice(0, 10);  // e.g. "2025-06-13"
+}
 
 /**
  * Start the auto-apply worker
@@ -112,97 +120,79 @@ async function processQueuedJobs(): Promise<void> {
 
 /**
  * Check if any jobs in standby mode need to be reactivated (daily reset)
+ * — and once per UTC‐day run cleanupJobLinks() to demote duplicate postings.
  */
 async function checkAndReactivateStandbyJobs(): Promise<void> {
   try {
-    // Using raw SQL through db.execute to get around type issues temporarily
-    // We'll be using direct database access for this specific operation
-    // since our storage interface might not have methods for the new status yet
-
-    // For now, we'll use a simpler approach that uses the existing storage interface
-    // Get all queued jobs for all users (not optimal but will work until we add a new method)
-    // Then filter in memory to find standby jobs
-
-    // First, get all users
-    const users = await storage.getAllUsers();
-
-    if (!users || users.length === 0) {
-      return; // No users to check
+    // 1) Detect UTC‐day rollover and run dedupe once
+    const currentDateString = getUTCDateString(new Date());
+    if (currentDateString !== lastCleanupDate) {
+      console.log(
+        `[Auto-Apply Worker] UTC date rolled over ${lastCleanupDate} → ${currentDateString}, running cleanupJobLinks()…`
+      );
+      await cleanupJobLinks();
+      lastCleanupDate = currentDateString;
     }
+
+    // 2) Gather all users and their standby jobs
+    const users = await storage.getAllUsers();
+    if (!users?.length) return;
 
     let totalStandbyJobs = 0;
     const jobsByUser: Record<number, JobQueue[]> = {};
-
-    // For each user, get their queued jobs and filter for standby
     for (const user of users) {
-      const userQueuedJobs = await storage.getQueuedJobsForUser(user.id);
-      const standbyJobs = userQueuedJobs.filter(
-        (job) => job.status === "standby"
-      );
-
-      if (standbyJobs.length > 0) {
-        jobsByUser[user.id] = standbyJobs;
-        totalStandbyJobs += standbyJobs.length;
+      const queued = await storage.getQueuedJobsForUser(user.id);
+      const standby = queued.filter(j => j.status === 'standby');
+      if (standby.length) {
+        jobsByUser[user.id] = standby;
+        totalStandbyJobs += standby.length;
       }
     }
-
-    if (totalStandbyJobs === 0) {
-      return; // No standby jobs to check
-    }
+    if (totalStandbyJobs === 0) return;
 
     console.log(
       `[Auto-Apply Worker] Checking ${totalStandbyJobs} standby jobs for reactivation`
     );
 
-    // Check each user's daily application limit
-    for (const [userIdStr, jobs] of Object.entries(jobsByUser)) {
-      const userId = parseInt(userIdStr, 10);
+    // 3) For each user, see if they have slots left and reactivate
+    for (const [userIdStr, standbyJobs] of Object.entries(jobsByUser)) {
+      const userId = Number(userIdStr);
 
-      // Check if user has available application slots today
+      // zero‐out today’s date for counting
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       const appliedToday = await storage.getJobsAppliedToday(userId, today);
 
-      // Get user's plan details
       const user = await storage.getUser(userId);
       if (!user) continue;
+      const plan = user.subscriptionPlan || 'FREE';
+      const limit = DAILY_LIMITS[plan as keyof typeof DAILY_LIMITS] ?? DAILY_LIMITS.FREE;
 
-      const userPlan = user.subscriptionPlan || "FREE";
-      const userDailyLimit =
-        DAILY_LIMITS[userPlan as keyof typeof DAILY_LIMITS] ||
-        DAILY_LIMITS.FREE;
-
-      // If user has applications available, reactivate their standby jobs
-      if (appliedToday < userDailyLimit) {
-        const availableSlots = userDailyLimit - appliedToday;
-        const jobsToReactivate = jobs.slice(0, availableSlots);
+      if (appliedToday < limit) {
+        const slots = limit - appliedToday;
+        const toReactivate = standbyJobs.slice(0, slots);
 
         console.log(
-          `[Auto-Apply Worker] Reactivating ${jobsToReactivate.length} standby jobs for user ${userId} (${availableSlots} slots available)`
+          `[Auto-Apply Worker] Reactivating ${toReactivate.length} jobs for user ${userId} (${slots} slots left)`
         );
 
-        // Reactivate jobs
-        for (const job of jobsToReactivate) {
+        for (const job of toReactivate) {
           await storage.updateQueuedJob(job.id, {
-            status: "pending",
+            status: 'pending',
             error: null,
             updatedAt: new Date(),
           });
-
           await createAutoApplyLog({
             userId,
             jobId: job.jobId,
-            status: "Reactivated",
-            message: "Job reactivated after daily application limit reset",
+            status: 'Reactivated',
+            message: 'Job reactivated after daily application limit reset',
           });
         }
       }
     }
-  } catch (error) {
-    console.error(
-      "[Auto-Apply Worker] Error reactivating standby jobs:",
-      error
-    );
+  } catch (err) {
+    console.error('[Auto-Apply Worker] Error in checkAndReactivateStandbyJobs:', err);
   }
 }
 
@@ -487,9 +477,8 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
         hour: "2-digit",
         minute: "2-digit",
       });
-      latestMessage = `${standby} job${
-        standby !== 1 ? "s" : ""
-      } in standby mode. Daily limit reached. Applications will resume at ${resetTimeFormatted}.`;
+      latestMessage = `${standby} job${standby !== 1 ? "s" : ""
+        } in standby mode. Daily limit reached. Applications will resume at ${resetTimeFormatted}.`;
     }
 
     return {
