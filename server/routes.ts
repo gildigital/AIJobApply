@@ -9,22 +9,12 @@ import { extractTextFromPDFBase64 } from "./utils/pdf-parser.js";
 import { generateUserSummary } from "./utils/user-summary-generator.js";
 import Stripe from "stripe";
 
-// Define JobListing interface for type safety in job search progress tracking
-interface JobListing {
-  jobTitle: string;
-  company: string;
-  description: string;
-  applyUrl: string;
-  location: string;
-  source: string;
-  matchScore?: number;
-  externalJobId?: string;
-}
 import {
   startAutoApply,
   getAutoApplyStatus,
   getAutoApplyLogs,
-  createAutoApplyLog
+  createAutoApplyLog,
+  JobListing
 } from "./services/auto-apply-service.js";
 import {
   enqueueJobsForUser,
@@ -488,14 +478,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Create job listing object from job tracker entry
-      const jobListing = {
+      const jobListing: JobListing = {
         jobTitle: job.jobTitle,
         company: job.company,
         description: job.notes || "", // We don't store the full description in the job tracker
         applyUrl: job.link || "",
         location: "", // Job tracker doesn't store location
-        source: job.source || undefined, // Ensure it's string | undefined, not null
-        externalJobId: job.externalJobId || undefined
+        source: job.source || "manual", // Default to manual if not available
+        externalJobId: job.externalJobId || `manual-${job.id}` // Create unique ID if not available
       };
 
       // Import the auto-apply service
