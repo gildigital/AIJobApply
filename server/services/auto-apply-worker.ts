@@ -243,6 +243,15 @@ async function checkAndQueueJobsForEnabledUsers(): Promise<void> {
     // Use a "for...of" loop which works well with "await"
     for (const user of enabledUsers) {
       try {
+        // Check if user has remaining applications before trying to start
+        const { getRemainingApplications } = await import("../utils/subscription-utils.js");
+        const remainingApplications = await getRemainingApplications(user.id);
+        
+        if (remainingApplications <= 0) {
+          // Skip this user silently - they've reached their daily limit
+          continue;
+        }
+
         console.log(`[Auto-Apply Worker] Starting engine for user ${user.id}...`);
         
         // Use 'await' to ensure we process one user completely before starting the next.
