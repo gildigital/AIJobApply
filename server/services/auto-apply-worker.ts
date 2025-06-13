@@ -22,6 +22,7 @@ import { eq } from "drizzle-orm";
 // Configuration for worker delays
 const WORKER_INTERVAL_MS = 10000; // Run worker every 10 seconds
 const DEFAULT_BATCH_SIZE = 5; // Process 5 jobs at a time
+const DELAY_BETWEEN_USERS_MS = 5000; // 5 seconds between users
 
 // Error tracking and recovery
 const MAX_CONSECUTIVE_ERRORS = 5;
@@ -231,20 +232,30 @@ async function processQueuedJobs(): Promise<void> {
  */
 async function checkAndQueueJobsForEnabledUsers(): Promise<void> {
   try {
-    // Get all users with auto-apply enabled
     const users = await storage.getAllUsers();
     if (!users?.length) return;
 
     const enabledUsers = users.filter(user => user.isAutoApplyEnabled);
     if (enabledUsers.length === 0) return;
 
-    console.log(`[Auto-Apply Worker] Found ${enabledUsers.length} users with auto-apply enabled`);
+    console.log(`[Auto-Apply Worker] Found ${enabledUsers.length} users to process sequentially.`);
 
-    // For each enabled user, kick off the original, complete auto-apply engine.
+    // Use a "for...of" loop which works well with "await"
     for (const user of enabledUsers) {
-      startAutoApply(user.id).catch(err => {
+      try {
+        console.log(`[Auto-Apply Worker] Starting engine for user ${user.id}...`);
+        
+        // Use 'await' to ensure we process one user completely before starting the next.
+        await startAutoApply(user.id);
+
+        console.log(`[Auto-Apply Worker] Engine finished for user ${user.id}. Waiting for ${DELAY_BETWEEN_USERS_MS / 1000}s...`);
+        
+        // Add the deliberate pause after each user is processed.
+        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_USERS_MS));
+
+      } catch (err) {
         console.error(`[Auto-Apply Worker] Error occurred during auto-apply process for user ${user.id}:`, err.message);
-      });
+      }
     }
   } catch (error) {
     console.error('[Auto-Apply Worker] Error in checkAndQueueJobsForEnabledUsers:', error);
