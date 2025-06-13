@@ -146,367 +146,61 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
     // Track how many applications we've processed
     let applicationsSubmitted = 0;
 
-    // Process each job
-    for (const job of jobs) {
-      // Fetch the latest user record before each job to check the current isAutoApplyEnabled flag
-      const latestUser = await storage.getUser(userId);
-      if (!latestUser) {
-        await createAutoApplyLog({
-          userId,
-          status: "Error",
-          message: "User not found during job processing"
-        });
-        return;
+    // Configuration for batched processing
+    const BATCH_SIZE = 3; // Process 3 jobs concurrently per batch
+    const batches = [];
+    
+    // Split jobs into batches
+    for (let i = 0; i < jobs.length; i += BATCH_SIZE) {
+      batches.push(jobs.slice(i, i + BATCH_SIZE));
+    }
+
+    console.log(`Processing ${jobs.length} jobs in ${batches.length} batches of ${BATCH_SIZE}`);
+
+    // Process each batch sequentially, but jobs within each batch concurrently
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      
+      await createAutoApplyLog({
+        userId,
+        status: "Processing",
+        message: `Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} jobs)`
+      });
+
+      // Process all jobs in this batch concurrently
+      const batchResults = await Promise.allSettled(
+        batch.map(job => processJobInBatch(job, userId, user, applicationsSubmitted, maxApplications))
+      );
+
+      // Count successful applications from this batch
+      let batchApplicationsSubmitted = 0;
+      for (const result of batchResults) {
+        if (result.status === 'fulfilled' && result.value.applicationSubmitted) {
+          batchApplicationsSubmitted++;
+        }
+        if (result.status === 'rejected') {
+          console.error('Job processing failed in batch:', result.reason);
+        }
       }
-      if (!latestUser.isAutoApplyEnabled) {
-        await createAutoApplyLog({
-          userId,
-          status: "Stopped",
-          message: `Auto-apply stopped: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`
-        });
-        console.log(`Auto-apply stopped for user ${userId}: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`);
-        return;
-      }
+
+      applicationsSubmitted += batchApplicationsSubmitted;
+      
+      console.log(`Batch ${batchIndex + 1} completed: ${batchApplicationsSubmitted} applications submitted`);
 
       // Stop if we've reached the limit
       if (applicationsSubmitted >= maxApplications) {
         await createAutoApplyLog({
           userId,
           status: "Completed",
-          message: `Daily limit of ${maxApplications} applications reached`
+          message: `Daily limit of ${maxApplications} applications reached after batch ${batchIndex + 1}`
         });
-        return;
+        break;
       }
 
-      // If this job needs processing (i.e., it's just a link), fetch the details now
-      if (job._needsProcessing && job._jobLinkId) {
-        await createAutoApplyLog({
-          userId,
-          status: "Processing",
-          message: `Fetching job details from ${job.applyUrl}`
-        });
-
-        try {
-          // Mark the job link as being processed
-          await storage.updateJobLink(job._jobLinkId, {
-            status: 'processing',
-            attemptCount: 1
-          });
-
-          // Fetch job details using the direct fetch API
-          const VITE_BACKEND_URL = process.env.VITE_BACKEND_URL || "http://localhost:5000";
-          const apiUrl = `${VITE_BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(job.applyUrl)}`;
-
-          console.log(`Fetching Workable job from URL: ${job.applyUrl}`);
-          const response = await fetch(apiUrl);
-
-          if (!response.ok) {
-            console.error(`Failed to fetch job details (${job.applyUrl}): ${response.status} ${response.statusText}`);
-
-            if (response.status === 429) {
-              // Throttled by our throttling system - handle specially
-              console.log(`🐌 Job description fetching throttled for ${job.applyUrl}`);
-              
-              try {
-                const throttleData = await response.json();
-                const retryAfter = throttleData.retryAfter || 30000;
-                const isThrottled = throttleData.isThrottled || false;
-                
-                if (isThrottled) {
-                  console.log(`🐌 Playwright worker throttling detected - skipping job and will retry later`);
-                  
-                  // Mark job as throttled (not failed) so it can be retried
-                  await storage.updateJobLink(job._jobLinkId, {
-                    status: 'pending', // Keep as pending for retry
-                    error: `Throttled - retry after ${retryAfter}ms`,
-                    processedAt: null // Don't mark as processed yet
-                  });
-
-                  await createAutoApplyLog({
-                    userId,
-                    status: "Throttled",
-                    message: `Playwright worker throttled - ${job.company} - ${job.jobTitle} will be retried later (retry after ${Math.round(retryAfter/1000)}s)`
-                  });
-                  
-                  // Continue to next job without counting this as processed
-                  continue;
-                }
-              } catch (parseError) {
-                console.log(`🐌 Could not parse 429 response, treating as regular rate limit`);
-              }
-              
-              // Regular rate limiting - mark as failed
-              await storage.updateJobLink(job._jobLinkId, {
-                status: 'failed',
-                error: 'Rate limited (429)',
-                processedAt: new Date()
-              });
-
-              await createAutoApplyLog({
-                userId,
-                status: "Skipped",
-                message: `Rate limited when fetching job details from ${job.applyUrl}`
-              });
-              continue;
-            } else if (response.status === 410) {
-              // --- THIS IS THE NEW BLOCK FOR "GONE" JOBS ---
-              console.log(`Job is Gone (410). Demoting priority for URL: ${job.applyUrl}`);
-
-              // 1. Extract the external ID from the URL
-              const externalJobId = getExternalIdFromWorkableUrl(job.applyUrl);
-
-              if (externalJobId) {
-                try {
-                  // 2. Run the SQL query to demote the job
-                  console.log(`Attempting to demote job with external_id: ${externalJobId}`);
-                  // IMPORTANT: Use '=' for a single value, not 'ANY' which is for an array.
-                  const updateRes = await pool.query(
-                    'UPDATE job_links SET priority = 0 WHERE external_job_id = $1',
-                    [externalJobId]
-                  );
-                  console.log(`Demoted ${updateRes.rowCount} job(s) with external_id: ${externalJobId}`);
-                } catch (dbError) {
-                  console.error(`Failed to demote job with external_id ${externalJobId} in the database.`, dbError);
-                  // Continue anyway, as we still want to log it as skipped.
-                }
-              } else {
-                console.error(`Could not parse external_job_id from URL: ${job.applyUrl}`);
-              }
-
-              // 3. Mark the job link as failed since the job is no longer available
-              await storage.updateJobLink(job._jobLinkId, {
-                status: 'failed', // Use valid status value
-                error: 'Job is no longer available (410 Gone)',
-                processedAt: new Date()
-              });
-
-              // 4. Create a log entry for user history
-              await createAutoApplyLog({
-                userId,
-                status: "Skipped",
-                message: `Job is no longer available and has been demoted from the queue.`
-              });
-              continue; // Move to the next job
-
-            } else {
-              // Other error - mark as failed and continue
-              await storage.updateJobLink(job._jobLinkId, {
-                status: 'failed',
-                error: `HTTP ${response.status}: ${response.statusText}`,
-                processedAt: new Date()
-              });
-
-              await createAutoApplyLog({
-                userId,
-                status: "Skipped",
-                message: `Failed to fetch job details from ${job.applyUrl}: ${response.statusText}`
-              });
-              continue;
-            }
-          }
-
-          const data = await response.json();
-
-          if (data.success && data.job) {
-            // Update the job object with fetched details
-            job.jobTitle = data.job.title;
-            job.company = data.job.company;
-            job.description = data.job.description || 'No description available';
-            job.location = data.job.location || 'Remote';
-
-            // Mark job link as processed
-            await storage.markJobLinkAsProcessed(job._jobLinkId);
-
-            console.log(`Successfully fetched job details: ${job.jobTitle} at ${job.company}`);
-
-            // Add a delay after fetching job details to avoid overwhelming the website
-            await new Promise(resolve => setTimeout(resolve, 10000));
-          } else {
-            // Invalid data - mark as failed and continue
-            await storage.updateJobLink(job._jobLinkId, {
-              status: 'failed',
-              error: 'Invalid job data received',
-              processedAt: new Date()
-            });
-
-            await createAutoApplyLog({
-              userId,
-              status: "Skipped",
-              message: `Invalid job data received from ${job.applyUrl}`
-            });
-            continue;
-          }
-        } catch (error: any) {
-          console.error(`Error fetching job details for ${job.applyUrl}:`, error);
-
-          // Mark as failed and continue
-          if (job._jobLinkId) {
-            await storage.updateJobLink(job._jobLinkId, {
-              status: 'failed',
-              error: error.message || 'Unknown error',
-              processedAt: new Date()
-            });
-          }
-
-          await createAutoApplyLog({
-            userId,
-            status: "Skipped",
-            message: `Error fetching job details from ${job.applyUrl}: ${error.message}`
-          });
-          continue;
-        }
-      }
-
-      // Check if we've already applied to this job
-      const existingJob = await checkForExistingApplication(userId, job);
-      if (existingJob) {
-        await createAutoApplyLog({
-          userId,
-          status: "Skipped",
-          message: `Already applied to ${job.company} - ${job.jobTitle}`
-        });
-        continue;
-      }
-
-      // Ensure job.description is present before scoring
-      if (!job.description || job.description.trim().length < 30) {
-        const desc = await fetchJobDescription(job.applyUrl);
-        if (desc && desc.length > 0) {
-          job.description = desc;
-        }
-      }
-      // Score the job fit using AI-powered matching
-      let matchResult;
-      try {
-        const { scoreJobFit: aiScoreJobFit } = await import('./job-matching-service.js');
-        matchResult = await aiScoreJobFit(user.id, job);
-        console.log(`AI score for ${job.jobTitle}: ${matchResult.matchScore}% - Reasons: ${matchResult.reasons.join(', ')}`);
-      } catch (error) {
-        console.error("Error with AI job scoring, falling back to basic scoring:", error);
-        const fallbackScore = await scoreJobFit(user, job);
-        matchResult = {
-          matchScore: fallbackScore,
-          reasons: ["Scoring calculated using keyword matching", "Upload a resume for AI-powered matching"]
-        };
-      }
-
-      // Log the evaluation
-      await createAutoApplyLog({
-        userId,
-        status: "Evaluating",
-        message: `Evaluating match for ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}%)`
-      });
-
-      // Get user's preferred match score threshold or use default
-      const profile = await storage.getUserProfile(userId);
-      const matchScoreThreshold = profile?.matchScoreThreshold || 70;
-
-      // Only apply if the score meets or exceeds the threshold
-      if (matchResult.matchScore >= matchScoreThreshold) {
-        try {
-          // Submit the application based on job source
-          const result = await submitApplication(user, job);
-
-          // Create job tracker entry with appropriate application status
-          let status = "Applied";
-          let applicationStatus = "pending";
-          let message = `Evaluating application to ${job.company} - ${job.jobTitle}`;
-
-          // Handle different submission results
-          console.log(`[AUTO-APPLY-DEBUG] Got result '${result}' from workable-application.ts`);
-          switch (result) {
-            case "success":
-              status = "Applied";
-              applicationStatus = "applied";
-              message = `Successfully applied to ${job.company} - ${job.jobTitle}`;
-              applicationsSubmitted++;
-              console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
-              break;
-            case "skipped":
-              status = "Saved";
-              applicationStatus = "skipped";
-              message = `Skipped ${job.company} - ${job.jobTitle} due to unsupported application process`;
-              console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
-              break;
-            case "error":
-              status = "Failed";
-              applicationStatus = "failed";
-              message = `Failed to apply to ${job.company} - ${job.jobTitle}`;
-              console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
-              break;
-          }
-
-          // Add to job tracker with the match score and application status
-          const jobRecord = await addJobToTracker(
-            userId,
-            job,
-            matchResult.matchScore,
-            status,
-            matchResult.reasons.join('\n'),
-            applicationStatus // Pass the application status
-          );
-
-          // Add detailed logging before creating the log
-          console.log(`[AUTO-APPLY-DEBUG] Creating log entry with status: ${result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed")}`);
-
-          // Log the application attempt
-          await createAutoApplyLog({
-            userId,
-            jobId: jobRecord.id,
-            status: result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed"),
-            message
-          });
-
-          console.log(`[AUTO-APPLY-DEBUG] Log entry created with message: ${message}`);
-
-          // Add a small delay between applications to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        } catch (error: any) {
-          // Even if the application fails, we should still track the job with its match score
-          // This ensures we can see the match score for failed applications
-          try {
-            const jobRecord = await addJobToTracker(
-              userId,
-              job,
-              matchResult.matchScore,
-              "Error",
-              matchResult.reasons.join('\n'),
-              "failed"
-            );
-
-            await createAutoApplyLog({
-              userId,
-              jobId: jobRecord.id,
-              status: "Error",
-              message: `Failed to apply to ${job.company} - ${job.jobTitle}: ${error.message}`
-            });
-          } catch (trackingError) {
-            console.error("Error tracking failed job:", trackingError);
-
-            await createAutoApplyLog({
-              userId,
-              status: "Error",
-              message: `Failed to apply to ${job.company} - ${job.jobTitle}: ${error.message}`
-            });
-          }
-        }
-      } else {
-        // Track the low-match score job but mark it as skipped
-        const jobRecord = await addJobToTracker(
-          userId,
-          job,
-          matchResult.matchScore,
-          "Skipped",
-          matchResult.reasons.join('\n'),
-          "skipped"
-        );
-
-        await createAutoApplyLog({
-          userId,
-          jobId: jobRecord.id,
-          status: "Skipped",
-          message: `Skipped job at ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}, Threshold: ${matchScoreThreshold})`
-        });
+      // Add a delay between batches to avoid overwhelming the system
+      if (batchIndex < batches.length - 1) {
+        console.log(`Waiting 5 seconds before processing next batch...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
 
@@ -525,6 +219,385 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
       status: "Error",
       message: `Auto-apply process error: ${error.message}`
     });
+  }
+}
+
+/**
+ * Process a single job within a batch - extracted from the main loop for concurrent processing
+ */
+async function processJobInBatch(
+  job: JobListing, 
+  userId: number, 
+  user: any, 
+  currentApplicationsSubmitted: number, 
+  maxApplications: number
+): Promise<{ applicationSubmitted: boolean }> {
+  try {
+    // Fetch the latest user record before each job to check the current isAutoApplyEnabled flag
+    const latestUser = await storage.getUser(userId);
+    if (!latestUser) {
+      await createAutoApplyLog({
+        userId,
+        status: "Error",
+        message: "User not found during job processing"
+      });
+      return { applicationSubmitted: false };
+    }
+    if (!latestUser.isAutoApplyEnabled) {
+      await createAutoApplyLog({
+        userId,
+        status: "Stopped",
+        message: `Auto-apply stopped: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`
+      });
+      console.log(`Auto-apply stopped for user ${userId}: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`);
+      return { applicationSubmitted: false };
+    }
+
+    // Stop if we've reached the limit (check current count)
+    if (currentApplicationsSubmitted >= maxApplications) {
+      return { applicationSubmitted: false };
+    }
+
+    // If this job needs processing (i.e., it's just a link), fetch the details now
+    if (job._needsProcessing && job._jobLinkId) {
+      await createAutoApplyLog({
+        userId,
+        status: "Processing",
+        message: `Fetching job details from ${job.applyUrl}`
+      });
+
+      try {
+        // Mark the job link as being processed
+        await storage.updateJobLink(job._jobLinkId, {
+          status: 'processing',
+          attemptCount: 1
+        });
+
+        // Fetch job details using the direct fetch API
+        const VITE_BACKEND_URL = process.env.VITE_BACKEND_URL || "http://localhost:5000";
+        const apiUrl = `${VITE_BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(job.applyUrl)}`;
+
+        console.log(`Fetching Workable job from URL: ${job.applyUrl}`);
+        const response = await fetch(apiUrl);
+
+        if (!response.ok) {
+          console.error(`Failed to fetch job details (${job.applyUrl}): ${response.status} ${response.statusText}`);
+
+          if (response.status === 429) {
+            // Throttled by our throttling system - handle specially
+            console.log(`🐌 Job description fetching throttled for ${job.applyUrl}`);
+            
+            try {
+              const throttleData = await response.json();
+              const retryAfter = throttleData.retryAfter || 30000;
+              const isThrottled = throttleData.isThrottled || false;
+              
+              if (isThrottled) {
+                console.log(`🐌 Playwright worker throttling detected - skipping job and will retry later`);
+                
+                // Mark job as throttled (not failed) so it can be retried
+                await storage.updateJobLink(job._jobLinkId, {
+                  status: 'pending', // Keep as pending for retry
+                  error: `Throttled - retry after ${retryAfter}ms`,
+                  processedAt: null // Don't mark as processed yet
+                });
+
+                await createAutoApplyLog({
+                  userId,
+                  status: "Throttled",
+                  message: `Playwright worker throttled - ${job.company} - ${job.jobTitle} will be retried later (retry after ${Math.round(retryAfter/1000)}s)`
+                });
+                
+                // Return without counting this as processed
+                return { applicationSubmitted: false };
+              }
+            } catch (parseError) {
+              console.log(`🐌 Could not parse 429 response, treating as regular rate limit`);
+            }
+            
+            // Regular rate limiting - mark as failed
+            await storage.updateJobLink(job._jobLinkId, {
+              status: 'failed',
+              error: 'Rate limited (429)',
+              processedAt: new Date()
+            });
+
+            await createAutoApplyLog({
+              userId,
+              status: "Skipped",
+              message: `Rate limited when fetching job details from ${job.applyUrl}`
+            });
+            return { applicationSubmitted: false };
+          } else if (response.status === 410) {
+            // Job is Gone (410) - demote priority
+            console.log(`Job is Gone (410). Demoting priority for URL: ${job.applyUrl}`);
+
+            // Extract the external ID from the URL
+            const externalJobId = getExternalIdFromWorkableUrl(job.applyUrl);
+
+            if (externalJobId) {
+              try {
+                // Demote the job priority
+                console.log(`Attempting to demote job with external_id: ${externalJobId}`);
+                const updateRes = await pool.query(
+                  'UPDATE job_links SET priority = 0 WHERE external_job_id = $1',
+                  [externalJobId]
+                );
+                console.log(`Demoted ${updateRes.rowCount} job(s) with external_id: ${externalJobId}`);
+              } catch (dbError) {
+                console.error(`Failed to demote job with external_id ${externalJobId} in the database.`, dbError);
+              }
+            } else {
+              console.error(`Could not parse external_job_id from URL: ${job.applyUrl}`);
+            }
+
+            // Mark the job link as failed since the job is no longer available
+            await storage.updateJobLink(job._jobLinkId, {
+              status: 'failed',
+              error: 'Job is no longer available (410 Gone)',
+              processedAt: new Date()
+            });
+
+            // Create a log entry for user history
+            await createAutoApplyLog({
+              userId,
+              status: "Skipped",
+              message: `Job is no longer available and has been demoted from the queue.`
+            });
+            return { applicationSubmitted: false };
+
+          } else {
+            // Other error - mark as failed and continue
+            await storage.updateJobLink(job._jobLinkId, {
+              status: 'failed',
+              error: `HTTP ${response.status}: ${response.statusText}`,
+              processedAt: new Date()
+            });
+
+            await createAutoApplyLog({
+              userId,
+              status: "Skipped",
+              message: `Failed to fetch job details from ${job.applyUrl}: ${response.statusText}`
+            });
+            return { applicationSubmitted: false };
+          }
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.job) {
+          // Update the job object with fetched details
+          job.jobTitle = data.job.title;
+          job.company = data.job.company;
+          job.description = data.job.description || 'No description available';
+          job.location = data.job.location || 'Remote';
+
+          // Mark job link as processed
+          await storage.markJobLinkAsProcessed(job._jobLinkId);
+
+          console.log(`Successfully fetched job details: ${job.jobTitle} at ${job.company}`);
+
+          // Add a delay after fetching job details to avoid overwhelming the website
+          await new Promise(resolve => setTimeout(resolve, 10000));
+        } else {
+          // Invalid data - mark as failed and continue
+          await storage.updateJobLink(job._jobLinkId, {
+            status: 'failed',
+            error: 'Invalid job data received',
+            processedAt: new Date()
+          });
+
+          await createAutoApplyLog({
+            userId,
+            status: "Skipped",
+            message: `Invalid job data received from ${job.applyUrl}`
+          });
+          return { applicationSubmitted: false };
+        }
+      } catch (error: any) {
+        console.error(`Error fetching job details for ${job.applyUrl}:`, error);
+
+        // Mark as failed and continue
+        if (job._jobLinkId) {
+          await storage.updateJobLink(job._jobLinkId, {
+            status: 'failed',
+            error: error.message || 'Unknown error',
+            processedAt: new Date()
+          });
+        }
+
+        await createAutoApplyLog({
+          userId,
+          status: "Skipped",
+          message: `Error fetching job details from ${job.applyUrl}: ${error.message}`
+        });
+        return { applicationSubmitted: false };
+      }
+    }
+
+    // Check if we've already applied to this job
+    const existingJob = await checkForExistingApplication(userId, job);
+    if (existingJob) {
+      await createAutoApplyLog({
+        userId,
+        status: "Skipped",
+        message: `Already applied to ${job.company} - ${job.jobTitle}`
+      });
+      return { applicationSubmitted: false };
+    }
+
+    // Ensure job.description is present before scoring
+    if (!job.description || job.description.trim().length < 30) {
+      const desc = await fetchJobDescription(job.applyUrl);
+      if (desc && desc.length > 0) {
+        job.description = desc;
+      }
+    }
+    
+    // Score the job fit using AI-powered matching
+    let matchResult;
+    try {
+      const { scoreJobFit: aiScoreJobFit } = await import('./job-matching-service.js');
+      matchResult = await aiScoreJobFit(user.id, job);
+      console.log(`AI score for ${job.jobTitle}: ${matchResult.matchScore}% - Reasons: ${matchResult.reasons.join(', ')}`);
+    } catch (error) {
+      console.error("Error with AI job scoring, falling back to basic scoring:", error);
+      const fallbackScore = await scoreJobFit(user, job);
+      matchResult = {
+        matchScore: fallbackScore,
+        reasons: ["Scoring calculated using keyword matching", "Upload a resume for AI-powered matching"]
+      };
+    }
+
+    // Log the evaluation
+    await createAutoApplyLog({
+      userId,
+      status: "Evaluating",
+      message: `Evaluating match for ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}%)`
+    });
+
+    // Get user's preferred match score threshold or use default
+    const profile = await storage.getUserProfile(userId);
+    const matchScoreThreshold = profile?.matchScoreThreshold || 70;
+
+    // Only apply if the score meets or exceeds the threshold
+    if (matchResult.matchScore >= matchScoreThreshold) {
+      try {
+        // Submit the application based on job source
+        const result = await submitApplication(user, job);
+
+        // Create job tracker entry with appropriate application status
+        let status = "Applied";
+        let applicationStatus = "pending";
+        let message = `Evaluating application to ${job.company} - ${job.jobTitle}`;
+
+        // Handle different submission results
+        console.log(`[AUTO-APPLY-DEBUG] Got result '${result}' from workable-application.ts`);
+        switch (result) {
+          case "success":
+            status = "Applied";
+            applicationStatus = "applied";
+            message = `Successfully applied to ${job.company} - ${job.jobTitle}`;
+            console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
+            break;
+          case "skipped":
+            status = "Saved";
+            applicationStatus = "skipped";
+            message = `Skipped ${job.company} - ${job.jobTitle} due to unsupported application process`;
+            console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
+            break;
+          case "error":
+            status = "Failed";
+            applicationStatus = "failed";
+            message = `Failed to apply to ${job.company} - ${job.jobTitle}`;
+            console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
+            break;
+        }
+
+        // Add to job tracker with the match score and application status
+        const jobRecord = await addJobToTracker(
+          userId,
+          job,
+          matchResult.matchScore,
+          status,
+          matchResult.reasons.join('\n'),
+          applicationStatus
+        );
+
+        // Add detailed logging before creating the log
+        console.log(`[AUTO-APPLY-DEBUG] Creating log entry with status: ${result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed")}`);
+
+        // Log the application attempt
+        await createAutoApplyLog({
+          userId,
+          jobId: jobRecord.id,
+          status: result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed"),
+          message
+        });
+
+        console.log(`[AUTO-APPLY-DEBUG] Log entry created with message: ${message}`);
+
+        // Add a small delay between applications to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Return true only if we successfully applied
+        return { applicationSubmitted: result === "success" };
+      } catch (error: any) {
+        // Even if the application fails, we should still track the job with its match score
+        try {
+          const jobRecord = await addJobToTracker(
+            userId,
+            job,
+            matchResult.matchScore,
+            "Error",
+            matchResult.reasons.join('\n'),
+            "failed"
+          );
+
+          await createAutoApplyLog({
+            userId,
+            jobId: jobRecord.id,
+            status: "Error",
+            message: `Failed to apply to ${job.company} - ${job.jobTitle}: ${error.message}`
+          });
+        } catch (trackingError) {
+          console.error("Error tracking failed job:", trackingError);
+
+          await createAutoApplyLog({
+            userId,
+            status: "Error",
+            message: `Failed to apply to ${job.company} - ${job.jobTitle}: ${error.message}`
+          });
+        }
+        return { applicationSubmitted: false };
+      }
+    } else {
+      // Track the low-match score job but mark it as skipped
+      const jobRecord = await addJobToTracker(
+        userId,
+        job,
+        matchResult.matchScore,
+        "Skipped",
+        matchResult.reasons.join('\n'),
+        "skipped"
+      );
+
+      await createAutoApplyLog({
+        userId,
+        jobId: jobRecord.id,
+        status: "Skipped",
+        message: `Skipped job at ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}, Threshold: ${matchScoreThreshold})`
+      });
+      return { applicationSubmitted: false };
+    }
+  } catch (error: any) {
+    console.error("Error processing job in batch:", error);
+    await createAutoApplyLog({
+      userId,
+      status: "Error",
+      message: `Error processing job ${job.company} - ${job.jobTitle}: ${error.message}`
+    });
+    return { applicationSubmitted: false };
   }
 }
 
