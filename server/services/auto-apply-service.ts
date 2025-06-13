@@ -1212,19 +1212,20 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
     currentStatus = "Stopped";
   }
   
+  // TODO: Delete this whole block after verifying that the auto-apply worker is working
   // If the status is "Stopped", "Completed", "Error", or "Not Started" but the flag is on,
   // then override status to "Started" since the button was toggled on
-  const inactiveStatuses = ['Stopped', 'Completed', 'Error', 'Not Started', 'Failed'];
-  if (inactiveStatuses.includes(currentStatus) && user.isAutoApplyEnabled) {
-    // This shouldn't happen often, but if it does, we need to restart the auto-apply process
-    // This would happen if the server restarted unexpectedly while auto-apply was running
-    // We'll restart auto-apply in this case
-    startAutoApply(userId).catch(err => {
-      console.error("Error restarting auto-apply process:", err);
-    });
+  // const inactiveStatuses = ['Stopped', 'Completed', 'Error', 'Not Started', 'Failed'];
+  // if (inactiveStatuses.includes(currentStatus) && user.isAutoApplyEnabled) {
+  //   // This shouldn't happen often, but if it does, we need to restart the auto-apply process
+  //   // This would happen if the server restarted unexpectedly while auto-apply was running
+  //   // We'll restart auto-apply in this case
+  //   startAutoApply(userId).catch(err => {
+  //     console.error("Error restarting auto-apply process:", err);
+  //   });
     
-    currentStatus = "Started";
-  }
+  //   currentStatus = "Started";
+  // }
   
   return {
     currentStatus,

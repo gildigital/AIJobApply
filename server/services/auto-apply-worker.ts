@@ -7,6 +7,7 @@
 
 import { storage } from "../storage.js";
 import {
+  startAutoApply,
   submitApplication,
   addJobToTracker,
   createAutoApplyLog,
@@ -21,6 +22,11 @@ import { eq } from "drizzle-orm";
 // Configuration for worker delays
 const WORKER_INTERVAL_MS = 10000; // Run worker every 10 seconds
 const DEFAULT_BATCH_SIZE = 5; // Process 5 jobs at a time
+
+// Error tracking and recovery
+const MAX_CONSECUTIVE_ERRORS = 5;
+const ERROR_RECOVERY_DELAY_MS = 30000; // 30 seconds before retrying after multiple errors
+const HEARTBEAT_LOG_INTERVAL = 60000; // Log heartbeat every 60 seconds
 
 // Plan-based throttling settings
 const APPLY_DELAY_MS = {
@@ -45,16 +51,25 @@ const DAILY_LIMITS = {
 // Worker state
 let isWorkerRunning = false;
 let workerInterval: NodeJS.Timeout | null = null;
+let heartbeatInterval: NodeJS.Timeout | null = null;
+let consecutiveErrors = 0;
+let lastSuccessfulRun = new Date();
+let totalJobsProcessed = 0;
+let workerStartTime = new Date();
 
 // Track the last calendar day (UTC) when we ran cleanup
 let lastCleanupDate = getUTCDateString(new Date());
+
+// Track the last time we searched for jobs for each user (to avoid constant searching)
+const lastJobSearchByUser: Record<number, number> = {};
+const JOB_SEARCH_COOLDOWN_MS = 60000; // 1 minute between job searches per user (reduced from 5 minutes)
 
 function getUTCDateString(d: Date): string {
   return d.toISOString().slice(0, 10);  // e.g. "2025-06-13"
 }
 
 /**
- * Start the auto-apply worker
+ * Start the auto-apply worker with improved resilience
  * This function starts a background worker that processes job applications
  */
 export function startAutoApplyWorker(): void {
@@ -63,14 +78,25 @@ export function startAutoApplyWorker(): void {
     return;
   }
 
-  console.log("[Auto-Apply Worker] Starting worker");
+  console.log("[Auto-Apply Worker] Starting resilient worker");
   isWorkerRunning = true;
+  consecutiveErrors = 0;
+  workerStartTime = new Date();
+  totalJobsProcessed = 0;
 
   // Run the worker immediately once
-  processQueuedJobs();
+  processQueuedJobsWithErrorHandling();
 
-  // Then set up interval for continuous processing
-  workerInterval = setInterval(processQueuedJobs, WORKER_INTERVAL_MS);
+  // Set up interval for continuous processing with error handling
+  workerInterval = setInterval(processQueuedJobsWithErrorHandling, WORKER_INTERVAL_MS);
+
+  // Set up heartbeat logging to monitor worker health
+  heartbeatInterval = setInterval(logWorkerHeartbeat, HEARTBEAT_LOG_INTERVAL);
+
+  // Set up process-level error handlers to prevent crashes
+  setupGlobalErrorHandlers();
+
+  console.log("[Auto-Apply Worker] Worker started successfully with enhanced error recovery");
 }
 
 /**
@@ -89,32 +115,139 @@ export function stopAutoApplyWorker(): void {
     clearInterval(workerInterval);
     workerInterval = null;
   }
+
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+
+  console.log("[Auto-Apply Worker] Worker stopped successfully");
+}
+
+/**
+ * Wrapper for processQueuedJobs with enhanced error handling
+ */
+async function processQueuedJobsWithErrorHandling(): Promise<void> {
+  try {
+    await processQueuedJobs();
+
+    // Reset error counter on successful run
+    if (consecutiveErrors > 0) {
+      console.log(`[Auto-Apply Worker] Recovered from ${consecutiveErrors} consecutive errors`);
+      consecutiveErrors = 0;
+    }
+    lastSuccessfulRun = new Date();
+
+  } catch (error) {
+    consecutiveErrors++;
+    console.error(`[Auto-Apply Worker] Error in worker cycle (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}):`, error);
+
+    // If too many consecutive errors, temporarily stop the worker and restart with delay
+    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+      console.error(`[Auto-Apply Worker] Too many consecutive errors (${consecutiveErrors}). Restarting worker in ${ERROR_RECOVERY_DELAY_MS}ms...`);
+
+      // Stop current worker
+      if (workerInterval) {
+        clearInterval(workerInterval);
+        workerInterval = null;
+      }
+
+      // Restart after delay
+      setTimeout(() => {
+        if (isWorkerRunning) { // Only restart if we weren't manually stopped
+          console.log("[Auto-Apply Worker] Restarting worker after error recovery delay");
+          consecutiveErrors = 0;
+          workerInterval = setInterval(processQueuedJobsWithErrorHandling, WORKER_INTERVAL_MS);
+        }
+      }, ERROR_RECOVERY_DELAY_MS);
+    }
+  }
+}
+
+/**
+ * Set up global error handlers to prevent the worker from crashing
+ */
+function setupGlobalErrorHandlers(): void {
+  // Handle unhandled promise rejections
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Auto-Apply Worker] Unhandled Rejection at:', promise, 'reason:', reason);
+    // Don't exit the process, just log the error
+  });
+
+  // Handle uncaught exceptions
+  process.on('uncaughtException', (error) => {
+    console.error('[Auto-Apply Worker] Uncaught Exception:', error);
+    // Don't exit the process, just log the error
+    // In production, you might want to restart the worker here
+  });
+}
+
+/**
+ * Log worker heartbeat and status information
+ */
+function logWorkerHeartbeat(): void {
+  const uptime = Date.now() - workerStartTime.getTime();
+  const uptimeMinutes = Math.floor(uptime / 60000);
+  const timeSinceLastSuccess = Date.now() - lastSuccessfulRun.getTime();
+  const minutesSinceSuccess = Math.floor(timeSinceLastSuccess / 60000);
+
+  console.log(`[Auto-Apply Worker] Heartbeat - Uptime: ${uptimeMinutes}m, Jobs processed: ${totalJobsProcessed}, Last success: ${minutesSinceSuccess}m ago, Errors: ${consecutiveErrors}`);
 }
 
 /**
  * Process the next batch of queued jobs
  */
 async function processQueuedJobs(): Promise<void> {
-  try {
-    // Check if we need to reactivate any standby jobs (it's a new day)
-    await checkAndReactivateStandbyJobs();
+  // Check if we need to reactivate any standby jobs (it's a new day)
+  await checkAndReactivateStandbyJobs();
 
-    // Get next batch of pending jobs
-    const pendingJobs = await storage.getNextJobsFromQueue(DEFAULT_BATCH_SIZE);
+  // Check if we need to find and queue new jobs for enabled users
+  await checkAndQueueJobsForEnabledUsers();
 
-    if (pendingJobs.length === 0) {
-      // No jobs to process
-      return;
-    }
+  // Get next batch of pending jobs
+  const pendingJobs = await storage.getNextJobsFromQueue(DEFAULT_BATCH_SIZE);
 
-    console.log(`[Auto-Apply Worker] Processing ${pendingJobs.length} jobs`);
+  if (pendingJobs.length === 0) {
+    // No jobs to process - this is normal, not an error
+    return;
+  }
 
-    // Process each job
-    for (const queuedJob of pendingJobs) {
+  console.log(`[Auto-Apply Worker] Processing ${pendingJobs.length} jobs`);
+
+  // Process each job
+  for (const queuedJob of pendingJobs) {
+    try {
       await processJob(queuedJob);
+      totalJobsProcessed++;
+    } catch (error) {
+      console.error(`[Auto-Apply Worker] Error processing individual job ${queuedJob.id}:`, error);
+      // Continue processing other jobs even if one fails
+    }
+  }
+}
+
+/**
+ * Check for users with auto-apply enabled and queue jobs for them
+ */
+async function checkAndQueueJobsForEnabledUsers(): Promise<void> {
+  try {
+    // Get all users with auto-apply enabled
+    const users = await storage.getAllUsers();
+    if (!users?.length) return;
+
+    const enabledUsers = users.filter(user => user.isAutoApplyEnabled);
+    if (enabledUsers.length === 0) return;
+
+    console.log(`[Auto-Apply Worker] Found ${enabledUsers.length} users with auto-apply enabled`);
+
+    // For each enabled user, kick off the original, complete auto-apply engine.
+    for (const user of enabledUsers) {
+      startAutoApply(user.id).catch(err => {
+        console.error(`[Auto-Apply Worker] Error occurred during auto-apply process for user ${user.id}:`, err.message);
+      });
     }
   } catch (error) {
-    console.error("[Auto-Apply Worker] Error processing queued jobs:", error);
+    console.error('[Auto-Apply Worker] Error in checkAndQueueJobsForEnabledUsers:', error);
   }
 }
 
@@ -158,7 +291,7 @@ async function checkAndReactivateStandbyJobs(): Promise<void> {
     for (const [userIdStr, standbyJobs] of Object.entries(jobsByUser)) {
       const userId = Number(userIdStr);
 
-      // zero‐out today’s date for counting
+      // zero‐out today's date for counting
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       const appliedToday = await storage.getJobsAppliedToday(userId, today);
@@ -424,6 +557,61 @@ function getPriorityForPlan(plan: string): number {
 }
 
 /**
+ * Ensure the worker is running and restart if necessary
+ * This function can be called periodically or when suspecting the worker has stopped
+ */
+export function ensureWorkerIsRunning(): boolean {
+  const currentTime = Date.now();
+  const timeSinceLastSuccess = currentTime - lastSuccessfulRun.getTime();
+  const maxIdleTime = WORKER_INTERVAL_MS * 10; // If no success for 10 cycles, restart
+
+  // Check if worker appears to be stuck or stopped
+  if (isWorkerRunning && timeSinceLastSuccess > maxIdleTime && consecutiveErrors < MAX_CONSECUTIVE_ERRORS) {
+    console.warn(`[Auto-Apply Worker] Worker appears stuck (${Math.floor(timeSinceLastSuccess / 60000)}m since last success). Restarting...`);
+
+    // Force restart
+    stopAutoApplyWorker();
+    setTimeout(() => {
+      startAutoApplyWorker();
+    }, 1000);
+
+    return false; // Worker was restarted
+  }
+
+  // If worker is not running, start it
+  if (!isWorkerRunning) {
+    console.log("[Auto-Apply Worker] Worker not running, starting...");
+    startAutoApplyWorker();
+    return false; // Worker was started
+  }
+
+  return true; // Worker is healthy and running
+}
+
+/**
+ * Get comprehensive worker status information
+ */
+export function getWorkerStatus(): any {
+  const currentTime = Date.now();
+  const uptime = currentTime - workerStartTime.getTime();
+  const timeSinceLastSuccess = currentTime - lastSuccessfulRun.getTime();
+
+  return {
+    isRunning: isWorkerRunning,
+    consecutiveErrors,
+    totalJobsProcessed,
+    workerStartTime: workerStartTime.toISOString(),
+    lastSuccessfulRun: lastSuccessfulRun.toISOString(),
+    uptimeMinutes: Math.floor(uptime / 60000),
+    minutesSinceLastSuccess: Math.floor(timeSinceLastSuccess / 60000),
+    isHealthy: isWorkerRunning && consecutiveErrors < MAX_CONSECUTIVE_ERRORS,
+    maxConsecutiveErrors: MAX_CONSECUTIVE_ERRORS,
+    workerInterval: WORKER_INTERVAL_MS,
+    errorRecoveryDelay: ERROR_RECOVERY_DELAY_MS
+  };
+}
+
+/**
  * Get the auto-apply status for a user
  *
  * @param userId User ID to get status for
@@ -495,6 +683,14 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
       dailyLimit,
       remainingToday: remainingApplications,
       nextReset: resetTime.toISOString(),
+      // Worker health information
+      workerHealth: {
+        consecutiveErrors,
+        lastSuccessfulRun: lastSuccessfulRun.toISOString(),
+        totalJobsProcessed,
+        uptimeMinutes: Math.floor((Date.now() - workerStartTime.getTime()) / 60000),
+        isHealthy: consecutiveErrors < MAX_CONSECUTIVE_ERRORS
+      }
     };
   } catch (error) {
     console.error(

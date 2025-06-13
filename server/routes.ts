@@ -20,7 +20,9 @@ import {
   enqueueJobsForUser,
   getAutoApplyStatus as getWorkerStatus,
   startAutoApplyWorker,
-  stopAutoApplyWorker
+  stopAutoApplyWorker,
+  ensureWorkerIsRunning,
+  getWorkerStatus as getWorkerHealthStatus
 } from "./services/auto-apply-worker.js";
 import { getWorkableJobsForUser, workableScraper } from "./services/workable-scraper.js";
 import { registerProfileRoutes } from "./routes/profile-routes.js";
@@ -606,16 +608,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // First update the user flag
+      // Only update the user flag - the worker will pick this up automatically
       await storage.updateUser(req.user.id, { isAutoApplyEnabled: true });
 
-      // Then start the auto-apply process
-      const result = await startAutoApply(req.user.id);
-      res.status(200).json({ message: result });
+      // Log that auto-apply was enabled
+      await createAutoApplyLog({
+        userId: req.user.id,
+        status: "Started",
+        message: "Auto-apply enabled - background worker will process jobs automatically"
+      });
+
+      res.status(200).json({
+        message: "Auto-apply enabled successfully. The background worker will find and apply to jobs automatically."
+      });
     } catch (error: any) {
-      console.error("Error starting auto-apply:", error);
+      console.error("Error enabling auto-apply:", error);
       res.status(500).json({
-        error: "Failed to start auto-apply process",
+        error: "Failed to enable auto-apply",
         message: error.message
       });
     }
@@ -940,7 +949,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       startAutoApplyWorker();
       res.json({
         message: "Worker started successfully",
-        success: true
+        success: true,
+        workerStatus: getWorkerHealthStatus()
       });
     } catch (error: any) {
       console.error("Error starting worker:", error);
@@ -963,12 +973,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
       stopAutoApplyWorker();
       res.json({
         message: "Worker stopped successfully",
-        success: true
+        success: true,
+        workerStatus: getWorkerHealthStatus()
       });
     } catch (error: any) {
       console.error("Error stopping worker:", error);
       res.status(500).json({
         message: error.message || "Failed to stop worker",
+        success: false
+      });
+    }
+  });
+
+  // Get worker health status (admin endpoint)
+  app.get("/api/job-queue/worker/health", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    try {
+      const healthStatus = getWorkerHealthStatus();
+      res.json({
+        message: "Worker health status retrieved",
+        success: true,
+        ...healthStatus
+      });
+    } catch (error: any) {
+      console.error("Error getting worker health:", error);
+      res.status(500).json({
+        message: error.message || "Failed to get worker health",
+        success: false
+      });
+    }
+  });
+
+  // Ensure worker is running (admin endpoint)
+  app.post("/api/job-queue/worker/ensure", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    try {
+      const wasHealthy = ensureWorkerIsRunning();
+      const healthStatus = getWorkerHealthStatus();
+
+      res.json({
+        message: wasHealthy ? "Worker is healthy and running" : "Worker was restarted or started",
+        success: true,
+        wasHealthy,
+        workerStatus: healthStatus
+      });
+    } catch (error: any) {
+      console.error("Error ensuring worker is running:", error);
+      res.status(500).json({
+        message: error.message || "Failed to ensure worker is running",
         success: false
       });
     }
