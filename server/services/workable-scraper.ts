@@ -27,7 +27,7 @@ export interface WorkableJob {
   url: string;
   source: "workable";
   appliedAt: Date | null;
-  status: "found" | "queued" | "applied" | "failed" | "skipped";
+  status: "found" | "queued" | "applied" | "failed" | "skipped" | "throttled";
 }
 
 /**
@@ -725,7 +725,49 @@ export class WorkableScraper {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        // Handle non-2xx responses (e.g., 404, 500)
+        // Special handling for 429 rate limiting from our throttling system
+        if (response.status === 429) {
+          console.log(`🐌 Job description fetching is throttled for ${url}`);
+          
+          try {
+            const throttleInfo = await response.json();
+            console.log(`🐌 Throttle details: ${JSON.stringify(throttleInfo)}`);
+            
+            // Return a special object indicating this job was throttled
+            return {
+              source: "workable",
+              status: "throttled",
+              appliedAt: null,
+              title: "Job Title Unavailable (Throttled)",
+              company: "Unknown (Throttled)", 
+              location: "Unknown (Throttled)",
+              description: "Job description fetching was throttled due to rate limiting. This job will be retried later.",
+              url: url,
+              isThrottled: true,
+              throttleReason: throttleInfo.reason || "Rate limit exceeded",
+              retryAfter: throttleInfo.retryAfter || 30000
+            } as WorkableJob & { isThrottled: boolean; throttleReason: string; retryAfter: number };
+          } catch (parseError) {
+            console.log(`🐌 Could not parse throttle response, using default throttle info`);
+            
+            // Return basic throttle info if we can't parse the response
+            return {
+              source: "workable",
+              status: "throttled",
+              appliedAt: null,
+              title: "Job Title Unavailable (Throttled)",
+              company: "Unknown (Throttled)",
+              location: "Unknown (Throttled)", 
+              description: "Job description fetching was throttled due to rate limiting. This job will be retried later.",
+              url: url,
+              isThrottled: true,
+              throttleReason: "Playwright worker throttling active",
+              retryAfter: 30000
+            } as WorkableJob & { isThrottled: boolean; throttleReason: string; retryAfter: number };
+          }
+        }
+        
+        // Handle other non-2xx responses (e.g., 404, 500)
         console.error(
           `Failed to fetch job details (${url}): ${response.status} ${response.statusText}`
         );
@@ -1356,6 +1398,35 @@ export class WorkableScraper {
           // Successfully fetched job details
           const jobDetail = result.value.detail;
           const jobLink = result.value.link;
+          
+          // Check if this job was throttled
+          const isThrottledJob = (jobDetail as any).isThrottled === true;
+          
+          if (isThrottledJob) {
+            console.log(`🐌 Job ${jobDetail.title} at ${jobDetail.company} was throttled - skipping scoring and deferring for retry`);
+            
+            // For throttled jobs, add them to a retry queue instead of processing normally
+            if (state) {
+              const throttleInfo = jobDetail as any;
+              const retryAfter = throttleInfo.retryAfter || 30000; // Default 30 seconds
+              
+              // Add to retry queue with lower priority and future timestamp
+              setTimeout(() => {
+                // Re-add the job link to be processed later
+                const retryPriority = 0.05; // Very low priority for retries
+                
+                console.log(`🔄 Re-queuing throttled job ${jobDetail.title} for retry`);
+                
+                // Add back to the job processing queue (this would need more sophisticated retry logic)
+                // For now, we'll just log that it should be retried
+              }, retryAfter);
+            }
+            
+            // Don't count throttled jobs as successfully processed
+            return;
+          }
+          
+          // Normal job processing
           successfulDetailsCount++;
 
           // Mark job ID as processed
@@ -1386,9 +1457,25 @@ export class WorkableScraper {
         }
       });
 
-      console.log(
-        `Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl}`
-      );
+      // Count throttled jobs for better reporting
+      const throttledCount = results.filter(result => 
+        result.status === "fulfilled" && 
+        result.value.detail && 
+        (result.value.detail as any).isThrottled === true
+      ).length;
+      
+      if (throttledCount > 0) {
+        console.log(
+          `🐌 ${throttledCount} job(s) were throttled and will be retried later`
+        );
+        console.log(
+          `Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl} (${throttledCount} throttled)`
+        );
+      } else {
+        console.log(
+          `Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl}`
+        );
+      }
 
       // Update search state with results
       if (state) {

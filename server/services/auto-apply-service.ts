@@ -204,7 +204,38 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
             console.error(`Failed to fetch job details (${job.applyUrl}): ${response.status} ${response.statusText}`);
 
             if (response.status === 429) {
-              // Rate limited - mark as failed and continue
+              // Throttled by our throttling system - handle specially
+              console.log(`🐌 Job description fetching throttled for ${job.applyUrl}`);
+              
+              try {
+                const throttleData = await response.json();
+                const retryAfter = throttleData.retryAfter || 30000;
+                const isThrottled = throttleData.isThrottled || false;
+                
+                if (isThrottled) {
+                  console.log(`🐌 Playwright worker throttling detected - skipping job and will retry later`);
+                  
+                  // Mark job as throttled (not failed) so it can be retried
+                  await storage.updateJobLink(job._jobLinkId, {
+                    status: 'pending', // Keep as pending for retry
+                    error: `Throttled - retry after ${retryAfter}ms`,
+                    processedAt: null // Don't mark as processed yet
+                  });
+
+                  await createAutoApplyLog({
+                    userId,
+                    status: "Throttled",
+                    message: `Playwright worker throttled - ${job.company} - ${job.jobTitle} will be retried later (retry after ${Math.round(retryAfter/1000)}s)`
+                  });
+                  
+                  // Continue to next job without counting this as processed
+                  continue;
+                }
+              } catch (parseError) {
+                console.log(`🐌 Could not parse 429 response, treating as regular rate limit`);
+              }
+              
+              // Regular rate limiting - mark as failed
               await storage.updateJobLink(job._jobLinkId, {
                 status: 'failed',
                 error: 'Rate limited (429)',

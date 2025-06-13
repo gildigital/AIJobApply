@@ -44,6 +44,37 @@ export function registerWorkableDirectFetch(app: Express) {
         });
         
         if (!workerResponse.ok) {
+          // Special handling for 429 rate limiting from our throttling system
+          if (workerResponse.status === 429) {
+            console.log(`🐌 Playwright worker is throttled (429) for ${url}`);
+            
+            try {
+              const throttleData = await workerResponse.json();
+              const retryAfter = throttleData.retryAfter || 30000; // Default 30 seconds
+              
+              return res.status(429).json({
+                success: false,
+                error: "Rate limited - job description fetching is throttled",
+                reason: throttleData.reason || "Rate limit exceeded",
+                retryAfter,
+                isThrottled: true,
+                url,
+                timestamp: new Date().toISOString()
+              });
+            } catch (parseError) {
+              // If we can't parse the 429 response, just return basic throttle info
+              return res.status(429).json({
+                success: false,
+                error: "Rate limited - job description fetching is throttled",
+                reason: "Playwright worker throttling active",
+                retryAfter: 30000,
+                isThrottled: true,
+                url,
+                timestamp: new Date().toISOString()
+              });
+            }
+          }
+          
           console.error(`Playwright worker responded with status ${workerResponse.status}`);
           throw new Error(`Worker responded with status ${workerResponse.status}`);
         }
