@@ -111,9 +111,26 @@ export function registerWorkableDirectFetch(app: Express) {
         
       } catch (workerError) {
         console.error("Error calling playwright worker:", workerError);
-        console.log("Falling back to direct HTML parsing");
         
-        // Fallback to the old method
+        // Check if this was a throttling error - if so, don't fall back
+        if (workerError instanceof Error && workerError.message.includes('Worker responded with status 429')) {
+          console.log("🐌 Worker is throttled - NOT falling back to direct HTML parsing to respect throttling");
+          // The 429 response was already sent above, so we should not reach here
+          // But if we do, return the throttling error
+          return res.status(429).json({
+            success: false,
+            error: "Rate limited - job description fetching is throttled",
+            reason: "Playwright worker throttling active",
+            retryAfter: 30000,
+            isThrottled: true,
+            url,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        console.log("Falling back to direct HTML parsing for non-throttling errors");
+        
+        // Fallback to the old method only for non-throttling errors
         return await fallbackDirectFetch(String(url), res);
       }
       
