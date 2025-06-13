@@ -41,14 +41,7 @@ export async function startAutoApply(userId: number): Promise<string> {
       throw new Error("User not found");
     }
 
-    // Log the start of the auto-apply process
-    await createAutoApplyLog({
-      userId,
-      status: "Started",
-      message: "Auto-apply process started"
-    });
-
-    // Check subscription and daily limits
+    // Check subscription and daily limits BEFORE logging start
     const { checkSubscriptionAccess } = await import("../utils/subscription-utils.js");
     const result = await checkSubscriptionAccess(userId);
 
@@ -73,6 +66,13 @@ export async function startAutoApply(userId: number): Promise<string> {
       });
       return "Daily application limit reached";
     }
+
+    // Only log start if we passed all checks
+    await createAutoApplyLog({
+      userId,
+      status: "Started",
+      message: "Auto-apply process started"
+    });
 
     // Process asynchronously (TODO: this must be a background worker)
     processAutoApply(userId, remainingApplications).catch(err => {
@@ -161,15 +161,29 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
       const batch = batches[batchIndex];
       
+      // Check daily limit before starting each batch
+      const { getRemainingApplications } = await import("../utils/subscription-utils.js");
+      const remainingApplications = await getRemainingApplications(userId);
+      
+      if (remainingApplications <= 0) {
+        await createAutoApplyLog({
+          userId,
+          status: "Completed",
+          message: `Daily limit reached before batch ${batchIndex + 1}. Stopping processing.`
+        });
+        console.log(`Daily limit reached before batch ${batchIndex + 1}. Stopping processing.`);
+        break;
+      }
+      
       await createAutoApplyLog({
         userId,
         status: "Processing",
-        message: `Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} jobs)`
+        message: `Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} jobs, ${remainingApplications} applications remaining)`
       });
 
-      // Process all jobs in this batch concurrently
+      // Process all jobs in this batch concurrently, but pass the current remaining count
       const batchResults = await Promise.allSettled(
-        batch.map(job => processJobInBatch(job, userId, user, applicationsSubmitted, maxApplications))
+        batch.map(job => processJobInBatch(job, userId, user, applicationsSubmitted, remainingApplications))
       );
 
       // Count successful applications from this batch
@@ -185,14 +199,15 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
 
       applicationsSubmitted += batchApplicationsSubmitted;
       
-      console.log(`Batch ${batchIndex + 1} completed: ${batchApplicationsSubmitted} applications submitted`);
+      console.log(`Batch ${batchIndex + 1} completed: ${batchApplicationsSubmitted} applications submitted (total: ${applicationsSubmitted})`);
 
-      // Stop if we've reached the limit
-      if (applicationsSubmitted >= maxApplications) {
+      // Check if we've reached the limit after this batch
+      const newRemainingApplications = await getRemainingApplications(userId);
+      if (newRemainingApplications <= 0) {
         await createAutoApplyLog({
           userId,
           status: "Completed",
-          message: `Daily limit of ${maxApplications} applications reached after batch ${batchIndex + 1}`
+          message: `Daily limit reached after batch ${batchIndex + 1}. Applied to ${applicationsSubmitted} jobs total.`
         });
         break;
       }
@@ -253,8 +268,12 @@ async function processJobInBatch(
       return { applicationSubmitted: false };
     }
 
-    // Stop if we've reached the limit (check current count)
-    if (currentApplicationsSubmitted >= maxApplications) {
+    // Check real-time daily limit before processing this job
+    const { getRemainingApplications } = await import("../utils/subscription-utils.js");
+    const remainingApplications = await getRemainingApplications(userId);
+    
+    if (remainingApplications <= 0) {
+      console.log(`Daily limit reached for user ${userId} before processing ${job.company} - ${job.jobTitle}`);
       return { applicationSubmitted: false };
     }
 
