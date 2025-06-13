@@ -254,7 +254,7 @@ async function checkAndQueueJobsForEnabledUsers(): Promise<void> {
         await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_USERS_MS));
 
       } catch (err) {
-        console.error(`[Auto-Apply Worker] Error occurred during auto-apply process for user ${user.id}:`, err.message);
+        console.error(`[Auto-Apply Worker] Error occurred during auto-apply process for user ${user.id}:`, (err as Error).message);
       }
     }
   } catch (error) {

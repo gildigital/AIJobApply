@@ -632,7 +632,10 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(jobLinks.userId, userId),
-          eq(jobLinks.status, 'pending'),
+          or(
+            eq(jobLinks.status, 'pending'),
+            eq(jobLinks.status, 'failed')
+          ),
           gt(jobLinks.priority, 0) // skip any links we’ve demoted
         )
       )
@@ -669,7 +672,10 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(jobLinks.userId, userId),
-          eq(jobLinks.status, 'pending')
+          or(
+            eq(jobLinks.status, 'pending'),
+            eq(jobLinks.status, 'failed')
+          )
         )
       );
 
