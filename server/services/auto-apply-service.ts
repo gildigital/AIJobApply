@@ -1,4 +1,4 @@
-import { db } from "../db.js";
+import { db, pool } from "../db.js";
 import { jobTracker, autoApplyLogs, users, InsertJobTracker, InsertAutoApplyLog } from "@shared/schema.js";
 import { eq, and, gte, sql, or } from "drizzle-orm";
 import { storage } from "../storage.js";
@@ -242,9 +242,9 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
                 console.error(`Could not parse external_job_id from URL: ${job.applyUrl}`);
               }
 
-              // 3. Mark the job link with a more descriptive status like 'expired'
+              // 3. Mark the job link as failed since the job is no longer available
               await storage.updateJobLink(job._jobLinkId, {
-                status: 'expired', // More descriptive than 'failed'
+                status: 'failed', // Use valid status value
                 error: 'Job is no longer available (410 Gone)',
                 processedAt: new Date()
               });
