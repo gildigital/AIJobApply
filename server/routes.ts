@@ -525,14 +525,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedAt: new Date()
       });
 
-      // Log the resubmission
+      // Log the resubmission - keep only "Applied" status
       const { createAutoApplyLog } = await import("./services/auto-apply-service.js");
-      await createAutoApplyLog({
-        userId: req.user.id,
-        jobId: jobId,
-        status: result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed"),
-        message: `Manually resubmitted application to ${job.company} - ${job.jobTitle}: ${message}`
-      });
+      if (result === "success") {
+        await createAutoApplyLog({
+          userId: req.user.id,
+          jobId: jobId,
+          status: "Applied",
+          message: `Manually resubmitted application to ${job.company} - ${job.jobTitle}: ${message}`
+        });
+      } else {
+        // TODO: Track statistics for non-Applied status instead of logging to auto_apply_logs table
+        // await createAutoApplyLog({
+        //   userId: req.user.id,
+        //   jobId: jobId,
+        //   status: result === "skipped" ? "Skipped" : "Failed",
+        //   message: `Manually resubmitted application to ${job.company} - ${job.jobTitle}: ${message}`
+        // });
+      }
 
       res.json({
         message,
@@ -611,12 +621,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Only update the user flag - the worker will pick this up automatically
       await storage.updateUser(req.user.id, { isAutoApplyEnabled: true });
 
-      // Log that auto-apply was enabled
-      await createAutoApplyLog({
-        userId: req.user.id,
-        status: "Started",
-        message: "Auto-apply enabled - background worker will process jobs automatically"
-      });
+      // TODO: Track statistics for "Started" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId: req.user.id,
+      //   status: "Started",
+      //   message: "Auto-apply enabled - background worker will process jobs automatically"
+      // });
 
       res.status(200).json({
         message: "Auto-apply enabled successfully. The background worker will find and apply to jobs automatically."
@@ -640,12 +650,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update the user flag first
       await storage.updateUser(req.user.id, { isAutoApplyEnabled: false });
 
-      // Add a log entry showing that the process was manually stopped
-      await createAutoApplyLog({
-        userId: req.user.id,
-        status: "Stopped",
-        message: "Auto-apply process manually stopped by user"
-      });
+      // TODO: Track statistics for "Stopped" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId: req.user.id,
+      //   status: "Stopped",
+      //   message: "Auto-apply process manually stopped by user"
+      // });
 
       res.status(200).json({ message: "Auto-apply process stopped" });
     } catch (error: any) {

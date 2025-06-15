@@ -46,11 +46,12 @@ export async function startAutoApply(userId: number): Promise<string> {
     const result = await checkSubscriptionAccess(userId);
 
     if (!result.allowed) {
-      await createAutoApplyLog({
-        userId,
-        status: "Failed",
-        message: `Auto-apply failed: ${result.reason}`
-      });
+      // TODO: Track statistics for "Failed" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId,
+      //   status: "Failed",
+      //   message: `Auto-apply failed: ${result.reason}`
+      // });
       return `Auto-apply failed: ${result.reason}`;
     }
 
@@ -59,20 +60,21 @@ export async function startAutoApply(userId: number): Promise<string> {
     const remainingApplications = await getRemainingApplications(userId);
 
     if (remainingApplications <= 0) {
-      await createAutoApplyLog({
-        userId,
-        status: "Failed",
-        message: "Daily application limit reached"
-      });
+      // TODO: Track statistics for "Failed" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId,
+      //   status: "Failed",
+      //   message: "Daily application limit reached"
+      // });
       return "Daily application limit reached";
     }
 
-    // Only log start if we passed all checks
-    await createAutoApplyLog({
-      userId,
-      status: "Started",
-      message: "Auto-apply process started"
-    });
+    // TODO: Track statistics for "Started" status instead of logging to auto_apply_logs table
+    // await createAutoApplyLog({
+    //   userId,
+    //   status: "Started",
+    //   message: "Auto-apply process started"
+    // });
 
     // Process asynchronously (TODO: this must be a background worker)
     processAutoApply(userId, remainingApplications).catch(err => {
@@ -83,12 +85,12 @@ export async function startAutoApply(userId: number): Promise<string> {
   } catch (error: any) {
     console.error("Error starting auto-apply:", error);
 
-    // Log the error
-    await createAutoApplyLog({
-      userId,
-      status: "Error",
-      message: `Auto-apply error: ${error.message}`
-    });
+    // TODO: Track statistics for "Error" status instead of logging to auto_apply_logs table
+    // await createAutoApplyLog({
+    //   userId,
+    //   status: "Error",
+    //   message: `Auto-apply error: ${error.message}`
+    // });
 
     throw error;
   }
@@ -112,30 +114,32 @@ function getExternalIdFromWorkableUrl(url: string): string | null {
  */
 async function processAutoApply(userId: number, maxApplications: number): Promise<void> {
   try {
-    // Update user's status 
-    await createAutoApplyLog({
-      userId,
-      status: "Searching",
-      message: "Searching for matching jobs"
-    });
+    // TODO: Track statistics for "Searching" status instead of logging to auto_apply_logs table
+    // await createAutoApplyLog({
+    //   userId,
+    //   status: "Searching",
+    //   message: "Searching for matching jobs"
+    // });
 
     // Get job listings for user
     const jobs = await getJobListingsForUser(userId);
 
     if (jobs.length === 0) {
-      await createAutoApplyLog({
-        userId,
-        status: "Completed",
-        message: "No matching jobs found"
-      });
+      // TODO: Track statistics for "Completed" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId,
+      //   status: "Completed",
+      //   message: "No matching jobs found"
+      // });
       return;
     }
 
-    await createAutoApplyLog({
-      userId,
-      status: "Processing",
-      message: `Found ${jobs.length} potential job matches`
-    });
+    // TODO: Track statistics for "Processing" status instead of logging to auto_apply_logs table
+    // await createAutoApplyLog({
+    //   userId,
+    //   status: "Processing",
+    //   message: `Found ${jobs.length} potential job matches`
+    // });
 
     // Get the user profile to use for job matching
     const user = await storage.getUser(userId);
@@ -166,20 +170,22 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
       const remainingApplications = await getRemainingApplications(userId);
       
       if (remainingApplications <= 0) {
-        await createAutoApplyLog({
-          userId,
-          status: "Completed",
-          message: `Daily limit reached before batch ${batchIndex + 1}. Stopping processing.`
-        });
+        // TODO: Track statistics for "Completed" status instead of logging to auto_apply_logs table
+        // await createAutoApplyLog({
+        //   userId,
+        //   status: "Completed",
+        //   message: `Daily limit reached before batch ${batchIndex + 1}. Stopping processing.`
+        // });
         console.log(`Daily limit reached before batch ${batchIndex + 1}. Stopping processing.`);
         break;
       }
       
-      await createAutoApplyLog({
-        userId,
-        status: "Processing",
-        message: `Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} jobs, ${remainingApplications} applications remaining)`
-      });
+      // TODO: Track statistics for "Processing" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId,
+      //   status: "Processing",
+      //   message: `Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} jobs, ${remainingApplications} applications remaining)`
+      // });
 
       // Process all jobs in this batch concurrently, but pass the current remaining count
       const batchResults = await Promise.allSettled(
@@ -204,11 +210,12 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
       // Check if we've reached the limit after this batch
       const newRemainingApplications = await getRemainingApplications(userId);
       if (newRemainingApplications <= 0) {
-        await createAutoApplyLog({
-          userId,
-          status: "Completed",
-          message: `Daily limit reached after batch ${batchIndex + 1}. Applied to ${applicationsSubmitted} jobs total.`
-        });
+        // TODO: Track statistics for "Completed" status instead of logging to auto_apply_logs table
+        // await createAutoApplyLog({
+        //   userId,
+        //   status: "Completed",
+        //   message: `Daily limit reached after batch ${batchIndex + 1}. Applied to ${applicationsSubmitted} jobs total.`
+        // });
         break;
       }
 
@@ -219,21 +226,21 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
       }
     }
 
-    // Final status update
-    await createAutoApplyLog({
-      userId,
-      status: "Completed",
-      message: `Auto-apply completed. Applied to ${applicationsSubmitted} jobs.`
-    });
+    // TODO: Track statistics for "Completed" status instead of logging to auto_apply_logs table
+    // await createAutoApplyLog({
+    //   userId,
+    //   status: "Completed",
+    //   message: `Auto-apply completed. Applied to ${applicationsSubmitted} jobs.`
+    // });
   } catch (error: any) {
     console.error("Error in auto-apply process:", error);
 
-    // Log the error
-    await createAutoApplyLog({
-      userId,
-      status: "Error",
-      message: `Auto-apply process error: ${error.message}`
-    });
+    // TODO: Track statistics for "Error" status instead of logging to auto_apply_logs table
+    // await createAutoApplyLog({
+    //   userId,
+    //   status: "Error",
+    //   message: `Auto-apply process error: ${error.message}`
+    // });
   }
 }
 
@@ -251,19 +258,21 @@ async function processJobInBatch(
     // Fetch the latest user record before each job to check the current isAutoApplyEnabled flag
     const latestUser = await storage.getUser(userId);
     if (!latestUser) {
-      await createAutoApplyLog({
-        userId,
-        status: "Error",
-        message: "User not found during job processing"
-      });
+      // TODO: Track statistics for "Error" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId,
+      //   status: "Error",
+      //   message: "User not found during job processing"
+      // });
       return { applicationSubmitted: false };
     }
     if (!latestUser.isAutoApplyEnabled) {
-      await createAutoApplyLog({
-        userId,
-        status: "Stopped",
-        message: `Auto-apply stopped: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`
-      });
+      // TODO: Track statistics for "Stopped" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId,
+      //   status: "Stopped",
+      //   message: `Auto-apply stopped: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`
+      // });
       console.log(`Auto-apply stopped for user ${userId}: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`);
       return { applicationSubmitted: false };
     }
@@ -279,11 +288,12 @@ async function processJobInBatch(
 
     // If this job needs processing (i.e., it's just a link), fetch the details now
     if (job._needsProcessing && job._jobLinkId) {
-      await createAutoApplyLog({
-        userId,
-        status: "Processing",
-        message: `Fetching job details from ${job.applyUrl}`
-      });
+      // TODO: Track statistics for "Processing" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId,
+      //   status: "Processing",
+      //   message: `Fetching job details from ${job.applyUrl}`
+      // });
 
       try {
         // Mark the job link as being processed
@@ -321,11 +331,12 @@ async function processJobInBatch(
                   processedAt: null // Don't mark as processed yet
                 });
 
-                await createAutoApplyLog({
-                  userId,
-                  status: "Throttled",
-                  message: `Playwright worker throttled - ${job.company} - ${job.jobTitle} will be retried later (retry after ${Math.round(retryAfter/1000)}s)`
-                });
+                // TODO: Track statistics for "Throttled" status instead of logging to auto_apply_logs table
+                // await createAutoApplyLog({
+                //   userId,
+                //   status: "Throttled",
+                //   message: `Playwright worker throttled - ${job.company} - ${job.jobTitle} will be retried later (retry after ${Math.round(retryAfter/1000)}s)`
+                // });
                 
                 // Return without counting this as processed
                 return { applicationSubmitted: false };
@@ -341,11 +352,12 @@ async function processJobInBatch(
               processedAt: new Date()
             });
 
-            await createAutoApplyLog({
-              userId,
-              status: "Skipped",
-              message: `Rate limited when fetching job details from ${job.applyUrl}`
-            });
+            // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
+            // await createAutoApplyLog({
+            //   userId,
+            //   status: "Skipped",
+            //   message: `Rate limited when fetching job details from ${job.applyUrl}`
+            // });
             return { applicationSubmitted: false };
           } else if (response.status === 410) {
             // Job is Gone (410) - demote priority
@@ -377,12 +389,12 @@ async function processJobInBatch(
               processedAt: new Date()
             });
 
-            // Create a log entry for user history
-            await createAutoApplyLog({
-              userId,
-              status: "Skipped",
-              message: `Job is no longer available and has been demoted from the queue.`
-            });
+            // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
+            // await createAutoApplyLog({
+            //   userId,
+            //   status: "Skipped",
+            //   message: `Job is no longer available and has been demoted from the queue.`
+            // });
             return { applicationSubmitted: false };
 
           } else {
@@ -393,11 +405,12 @@ async function processJobInBatch(
               processedAt: new Date()
             });
 
-            await createAutoApplyLog({
-              userId,
-              status: "Skipped",
-              message: `Failed to fetch job details from ${job.applyUrl}: ${response.statusText}`
-            });
+            // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
+            // await createAutoApplyLog({
+            //   userId,
+            //   status: "Skipped",
+            //   message: `Failed to fetch job details from ${job.applyUrl}: ${response.statusText}`
+            // });
             return { applicationSubmitted: false };
           }
         }
@@ -426,11 +439,12 @@ async function processJobInBatch(
             processedAt: new Date()
           });
 
-          await createAutoApplyLog({
-            userId,
-            status: "Skipped",
-            message: `Invalid job data received from ${job.applyUrl}`
-          });
+          // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
+          // await createAutoApplyLog({
+          //   userId,
+          //   status: "Skipped",
+          //   message: `Invalid job data received from ${job.applyUrl}`
+          // });
           return { applicationSubmitted: false };
         }
       } catch (error: any) {
@@ -445,11 +459,12 @@ async function processJobInBatch(
           });
         }
 
-        await createAutoApplyLog({
-          userId,
-          status: "Skipped",
-          message: `Error fetching job details from ${job.applyUrl}: ${error.message}`
-        });
+        // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
+        // await createAutoApplyLog({
+        //   userId,
+        //   status: "Skipped",
+        //   message: `Error fetching job details from ${job.applyUrl}: ${error.message}`
+        // });
         return { applicationSubmitted: false };
       }
     }
@@ -457,11 +472,12 @@ async function processJobInBatch(
     // Check if we've already applied to this job
     const existingJob = await checkForExistingApplication(userId, job);
     if (existingJob) {
-      await createAutoApplyLog({
-        userId,
-        status: "Skipped",
-        message: `Already applied to ${job.company} - ${job.jobTitle}`
-      });
+      // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId,
+      //   status: "Skipped",
+      //   message: `Already applied to ${job.company} - ${job.jobTitle}`
+      // });
       return { applicationSubmitted: false };
     }
 
@@ -488,12 +504,12 @@ async function processJobInBatch(
       };
     }
 
-    // Log the evaluation
-    await createAutoApplyLog({
-      userId,
-      status: "Evaluating",
-      message: `Evaluating match for ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}%)`
-    });
+    // TODO: Track statistics for "Evaluating" status instead of logging to auto_apply_logs table
+    // await createAutoApplyLog({
+    //   userId,
+    //   status: "Evaluating",
+    //   message: `Evaluating match for ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}%)`
+    // });
 
     // Get user's preferred match score threshold or use default
     const profile = await storage.getUserProfile(userId);
@@ -505,54 +521,57 @@ async function processJobInBatch(
         // Submit the application based on job source
         const result = await submitApplication(user, job);
 
-        // Create job tracker entry with appropriate application status
-        let status = "Applied";
-        let applicationStatus = "pending";
-        let message = `Evaluating application to ${job.company} - ${job.jobTitle}`;
+        // Only add jobs to tracker that were successfully applied
+        let jobRecord = null;
+        let message = "";
+        
+        if (result === "success") {
+          // Create job tracker entry only for successful applications
+          let status = "Applied";
+          let applicationStatus = "applied";
+          message = `Successfully applied to ${job.company} - ${job.jobTitle}`;
+          console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
 
-        // Handle different submission results
-        console.log(`[AUTO-APPLY-DEBUG] Got result '${result}' from workable-application.ts`);
-        switch (result) {
-          case "success":
-            status = "Applied";
-            applicationStatus = "applied";
-            message = `Successfully applied to ${job.company} - ${job.jobTitle}`;
-            console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
-            break;
-          case "skipped":
-            status = "Saved";
-            applicationStatus = "skipped";
-            message = `Skipped ${job.company} - ${job.jobTitle} due to unsupported application process`;
-            console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
-            break;
-          case "error":
-            status = "Failed";
-            applicationStatus = "failed";
-            message = `Failed to apply to ${job.company} - ${job.jobTitle}`;
-            console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
-            break;
+          // Add to job tracker with the match score and application status
+          jobRecord = await addJobToTracker(
+            userId,
+            job,
+            matchResult.matchScore,
+            status,
+            matchResult.reasons.join('\n'),
+            applicationStatus
+          );
+        } else {
+          // TODO: Track statistics for non-Applied job outcomes instead of adding to job_tracker table
+          // Consider implementing a separate statistics/analytics system for:
+          // - Skipped applications (result === "skipped")
+          // - Failed applications (result === "error")
+          console.log(`[AUTO-APPLY-DEBUG] Job ${result} - not adding to job_tracker table`);
+          message = result === "skipped" 
+            ? `Skipped ${job.company} - ${job.jobTitle} due to unsupported application process`
+            : `Failed to apply to ${job.company} - ${job.jobTitle}`;
         }
-
-        // Add to job tracker with the match score and application status
-        const jobRecord = await addJobToTracker(
-          userId,
-          job,
-          matchResult.matchScore,
-          status,
-          matchResult.reasons.join('\n'),
-          applicationStatus
-        );
 
         // Add detailed logging before creating the log
         console.log(`[AUTO-APPLY-DEBUG] Creating log entry with status: ${result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed")}`);
 
-        // Log the application attempt
-        await createAutoApplyLog({
-          userId,
-          jobId: jobRecord.id,
-          status: result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed"),
-          message
-        });
+        // Log the application attempt - keep only "Applied" status
+        if (result === "success" && jobRecord) {
+          await createAutoApplyLog({
+            userId,
+            jobId: jobRecord.id,
+            status: "Applied",
+            message
+          });
+        } else {
+          // TODO: Track statistics for non-Applied status instead of logging to auto_apply_logs table
+          // await createAutoApplyLog({
+          //   userId,
+          //   jobId: jobRecord?.id,
+          //   status: result === "skipped" ? "Skipped" : "Failed",
+          //   message
+          // });
+        }
 
         console.log(`[AUTO-APPLY-DEBUG] Log entry created with message: ${message}`);
 
@@ -562,60 +581,46 @@ async function processJobInBatch(
         // Return true only if we successfully applied
         return { applicationSubmitted: result === "success" };
       } catch (error: any) {
-        // Even if the application fails, we should still track the job with its match score
-        try {
-          const jobRecord = await addJobToTracker(
-            userId,
-            job,
-            matchResult.matchScore,
-            "Error",
-            matchResult.reasons.join('\n'),
-            "failed"
-          );
-
-          await createAutoApplyLog({
-            userId,
-            jobId: jobRecord.id,
-            status: "Error",
-            message: `Failed to apply to ${job.company} - ${job.jobTitle}: ${error.message}`
-          });
-        } catch (trackingError) {
-          console.error("Error tracking failed job:", trackingError);
-
-          await createAutoApplyLog({
-            userId,
-            status: "Error",
-            message: `Failed to apply to ${job.company} - ${job.jobTitle}: ${error.message}`
-          });
-        }
+        // TODO: Track statistics for application errors instead of adding to job_tracker table
+        // Consider implementing a separate error tracking/analytics system for:
+        // - Application submission failures
+        // - Network/timeout errors
+        // - Service unavailability
+        console.error(`Application error for ${job.company} - ${job.jobTitle}:`, error.message);
+        
+        // TODO: Track statistics for "Error" status instead of logging to auto_apply_logs table
+        // await createAutoApplyLog({
+        //   userId,
+        //   status: "Error",
+        //   message: `Failed to apply to ${job.company} - ${job.jobTitle}: ${error.message}`
+        // });
+        
         return { applicationSubmitted: false };
       }
     } else {
-      // Track the low-match score job but mark it as skipped
-      const jobRecord = await addJobToTracker(
-        userId,
-        job,
-        matchResult.matchScore,
-        "Skipped",
-        matchResult.reasons.join('\n'),
-        "skipped"
-      );
-
-      await createAutoApplyLog({
-        userId,
-        jobId: jobRecord.id,
-        status: "Skipped",
-        message: `Skipped job at ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}, Threshold: ${matchScoreThreshold})`
-      });
+      // TODO: Track statistics for low match score jobs instead of adding to job_tracker table
+      // Consider implementing a separate analytics system for:
+      // - Jobs that don't meet match score threshold
+      // - User match preferences and thresholds
+      // - Job quality metrics for improving matching
+      console.log(`Skipping job ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}, Threshold: ${matchScoreThreshold})`);
+      
+      // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId,
+      //   status: "Skipped",
+      //   message: `Skipped job at ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}, Threshold: ${matchScoreThreshold})`
+      // });
       return { applicationSubmitted: false };
     }
   } catch (error: any) {
     console.error("Error processing job in batch:", error);
-    await createAutoApplyLog({
-      userId,
-      status: "Error",
-      message: `Error processing job ${job.company} - ${job.jobTitle}: ${error.message}`
-    });
+    // TODO: Track statistics for "Error" status instead of logging to auto_apply_logs table
+    // await createAutoApplyLog({
+    //   userId,
+    //   status: "Error",
+    //   message: `Error processing job ${job.company} - ${job.jobTitle}: ${error.message}`
+    // });
     return { applicationSubmitted: false };
   }
 }

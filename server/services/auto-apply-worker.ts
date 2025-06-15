@@ -335,12 +335,13 @@ async function checkAndReactivateStandbyJobs(): Promise<void> {
             error: null,
             updatedAt: new Date(),
           });
-          await createAutoApplyLog({
-            userId,
-            jobId: job.jobId,
-            status: 'Reactivated',
-            message: 'Job reactivated after daily application limit reset',
-          });
+          // TODO: Track statistics for "Reactivated" status instead of logging to auto_apply_logs table
+          // await createAutoApplyLog({
+          //   userId,
+          //   jobId: job.jobId,
+          //   status: 'Reactivated',
+          //   message: 'Job reactivated after daily application limit reset',
+          // });
         }
       }
     }
@@ -378,12 +379,13 @@ async function processJob(queuedJob: JobQueue): Promise<void> {
         error: "Auto-apply is disabled for this user.",
         processedAt: new Date(),
       });
-      await createAutoApplyLog({
-        userId: user.id,
-        jobId: job.id,
-        status: "Skipped",
-        message: "Job skipped because auto-apply is disabled for this user.",
-      });
+      // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId: user.id,
+      //   jobId: job.id,
+      //   status: "Skipped",
+      //   message: "Job skipped because auto-apply is disabled for this user.",
+      // });
       return;
     }
 
@@ -402,12 +404,13 @@ async function processJob(queuedJob: JobQueue): Promise<void> {
         error: "Daily application limit reached, will resume after midnight",
       });
 
-      await createAutoApplyLog({
-        userId: user.id,
-        jobId: job.id,
-        status: "Standby",
-        message: `Job queued in standby mode. Daily limit of ${userDailyLimit} applications reached. Will resume after midnight reset.`,
-      });
+      // TODO: Track statistics for "Standby" status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId: user.id,
+      //   jobId: job.id,
+      //   status: "Standby",
+      //   message: `Job queued in standby mode. Daily limit of ${userDailyLimit} applications reached. Will resume after midnight reset.`,
+      // });
 
       return;
     }
@@ -456,9 +459,11 @@ async function processJob(queuedJob: JobQueue): Promise<void> {
           ? "Application skipped by Playwright worker - form not compatible or already applied"
           : "Error applying to job via Playwright worker";
 
-      await storage.updateJob(job.id, {
-        applicationStatus: result === "skipped" ? "skipped" : "failed",
-      });
+      // TODO: Track statistics for non-Applied job results instead of updating job_tracker table
+      // Consider implementing a separate analytics system for:
+      // - Skipped applications (incompatible forms, already applied)
+      // - Failed applications (network errors, service issues)
+      console.log(`Job ${result} for job ID ${job.id}: ${errorMessage}`);
 
       await storage.updateQueuedJob(queuedJob.id, {
         status: result === "skipped" ? "skipped" : "failed", // Use proper status in queue
@@ -466,12 +471,13 @@ async function processJob(queuedJob: JobQueue): Promise<void> {
         processedAt: new Date(),
       });
 
-      await createAutoApplyLog({
-        userId: user.id,
-        jobId: job.id,
-        status: result === "skipped" ? "Skipped" : "Failed",
-        message: errorMessage,
-      });
+      // TODO: Track statistics for non-Applied status instead of logging to auto_apply_logs table
+      // await createAutoApplyLog({
+      //   userId: user.id,
+      //   jobId: job.id,
+      //   status: result === "skipped" ? "Skipped" : "Failed",
+      //   message: errorMessage,
+      // });
     }
 
     // Apply throttling delay between jobs
@@ -535,17 +541,17 @@ export async function enqueueJobsForUser(
         createdAt: now,
       }))
     );
-    // Log the enqueued jobs
-    await Promise.all(
-      jobIds.map((jobId) =>
-        createAutoApplyLog({
-          userId,
-          jobId,
-          status: "Queued",
-          message: "Job added to auto-apply queue",
-        })
-      )
-    );
+    // TODO: Track statistics for "Queued" status instead of logging to auto_apply_logs table
+    // await Promise.all(
+    //   jobIds.map((jobId) =>
+    //     createAutoApplyLog({
+    //       userId,
+    //       jobId,
+    //       status: "Queued",
+    //       message: "Job added to auto-apply queue",
+    //     })
+    //   )
+    // );
 
     return queuedJobs;
   } catch (error) {
