@@ -14,9 +14,15 @@ export interface PlanConfig {
   [key: string]: PlanFeatures;
 }
 
-// Plan definitions matching your current offering
+// Plan definitions matching your actual database plan IDs
 export const PLAN_CONFIGS: PlanConfig = {
-  "3_MONTHS_GOLD": {
+  "FREE": {
+    "ai_models": [],
+    "ai_systems": [],
+    "daily_limit": 5,
+    "resumes_allowed": 1
+  },
+  "three_months_gold": {
     "ai_models": [
       "ChatGPT 4o",
       "Claude 3.7 Sonnet"
@@ -30,7 +36,7 @@ export const PLAN_CONFIGS: PlanConfig = {
     "daily_limit": 100,
     "resumes_allowed": 1
   },
-  "1_MONTH_GOLD": {
+  "one_month_gold": {
     "ai_models": [
       "ChatGPT 4o",
       "Claude 3.7 Sonnet"
@@ -44,7 +50,7 @@ export const PLAN_CONFIGS: PlanConfig = {
     "daily_limit": 100,
     "resumes_allowed": 1
   },
-  "1_MONTH_SILVER": {
+  "one_month_silver": {
     "ai_models": [
       "ChatGPT 4o-mini"
     ],
@@ -56,7 +62,7 @@ export const PLAN_CONFIGS: PlanConfig = {
     "daily_limit": 40,
     "resumes_allowed": 1
   },
-  "2_WEEKS": {
+  "two_weeks": {
     "ai_models": [
       "ChatGPT 4o-mini"
     ],

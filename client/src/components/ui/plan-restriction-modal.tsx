@@ -24,28 +24,28 @@ const PLAN_FEATURES = {
   "FREE": {
     ai_models: [],
     ai_systems: [],
-    daily_limit: 0,
+    daily_limit: 5,
     color: "gray"
   },
-  "2_WEEKS": {
+  "two_weeks": {
     ai_models: ["ChatGPT 4o-mini"],
     ai_systems: ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking"],
     daily_limit: 20,
     color: "blue"
   },
-  "1_MONTH_SILVER": {
+  "one_month_silver": {
     ai_models: ["ChatGPT 4o-mini"],
     ai_systems: ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking"],
     daily_limit: 40,
     color: "gray"
   },
-  "1_MONTH_GOLD": {
+  "one_month_gold": {
     ai_models: ["ChatGPT 4o", "Claude 3.7 Sonnet"],
     ai_systems: ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking", "24/7 Application AI Reliability"],
     daily_limit: 100,
     color: "yellow"
   },
-  "3_MONTHS_GOLD": {
+  "three_months_gold": {
     ai_models: ["ChatGPT 4o", "Claude 3.7 Sonnet"],
     ai_systems: ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking", "24/7 Application AI Reliability"],
     daily_limit: 100,
@@ -66,15 +66,15 @@ export function PlanRestrictionModal({
 
   const getUpgradeRecommendation = () => {
     if (restriction.type === "AI_MODEL" && restriction.restrictedModel?.includes("Claude")) {
-      return "1_MONTH_GOLD";
+      return "one_month_gold";
     }
     if (restriction.type === "FEATURE" && restriction.restrictedFeature?.includes("24/7")) {
-      return "1_MONTH_GOLD";
+      return "one_month_gold";
     }
     if (restriction.type === "DAILY_LIMIT") {
-      return restriction.currentPlan === "2_WEEKS" ? "1_MONTH_SILVER" : "1_MONTH_GOLD";
+      return restriction.currentPlan === "two_weeks" ? "one_month_silver" : "one_month_gold";
     }
-    return "1_MONTH_GOLD";
+    return "one_month_gold";
   };
 
   const recommendedPlan = getUpgradeRecommendation();

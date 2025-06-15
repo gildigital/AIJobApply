@@ -125,10 +125,10 @@ export function usePlanRestrictions() {
     // Simple client-side feature checking (server is the source of truth)
     const PLAN_FEATURES: Record<string, string[]> = {
       "FREE": [],
-      "2_WEEKS": ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking"],
-      "1_MONTH_SILVER": ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking"],
-      "1_MONTH_GOLD": ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking", "24/7 Application AI Reliability"],
-      "3_MONTHS_GOLD": ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking", "24/7 Application AI Reliability"]
+      "two_weeks": ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking"],
+      "one_month_silver": ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking"],
+      "one_month_gold": ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking", "24/7 Application AI Reliability"],
+      "three_months_gold": ["AI Resume Enhancement", "Personalized Cover Letters", "Application Tracking", "24/7 Application AI Reliability"]
     };
     
     return PLAN_FEATURES[plan]?.includes(featureName) || false;

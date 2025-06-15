@@ -99,7 +99,7 @@ export function requirePremiumFeature(featureName: string) {
       return res.status(403).json({ 
         message: `${featureName} requires a premium plan`,
         current_plan: userPlan,
-        available_plans: ["1_MONTH_GOLD", "3_MONTHS_GOLD"],
+        available_plans: ["one_month_gold", "three_months_gold"],
         upgrade_required: true
       });
     }
@@ -134,9 +134,9 @@ export function hasPlanLevel(req: Request, requiredLevel: "SILVER" | "GOLD"): bo
   
   switch (requiredLevel) {
     case "SILVER":
-      return ["1_MONTH_SILVER", "2_WEEKS", "1_MONTH_GOLD", "3_MONTHS_GOLD"].includes(userPlan);
+      return ["one_month_silver", "two_weeks", "one_month_gold", "three_months_gold"].includes(userPlan);
     case "GOLD":
-      return ["1_MONTH_GOLD", "3_MONTHS_GOLD"].includes(userPlan);
+      return ["one_month_gold", "three_months_gold"].includes(userPlan);
     default:
       return false;
   }
