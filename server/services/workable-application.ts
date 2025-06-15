@@ -561,7 +561,8 @@ export async function submitWorkableApplication(
             profile || {},
             job.description,
             fieldName,
-            hasQAContext ? field.qaContext : undefined
+            hasQAContext ? field.qaContext : undefined,
+            user.subscriptionPlan || "FREE"
           );
           formData[fieldName] = field.options[bestOptionIndex].value;
           console.log(
@@ -599,6 +600,7 @@ export async function submitWorkableApplication(
             profile || {},
             job.description,
             hasQAContext ? field.qaContext : undefined,
+            user.subscriptionPlan || "FREE"
           );
           
           if (answer) {
@@ -1143,7 +1145,8 @@ async function generateCoverLetter(
       profile || {},
       job.description,
       job.company,
-      job.jobTitle
+      job.jobTitle,
+      user.subscriptionPlan || "FREE"
     );
     if (aiCoverLetter) {
       return aiCoverLetter;
@@ -1188,6 +1191,8 @@ async function generateCustomAnswers(
       resumeText,
       profile || {},
       job.description,
+      undefined, // qa context not available here
+      user.subscriptionPlan || "FREE"
     );
     if (aiAnswer) {
       return aiAnswer;

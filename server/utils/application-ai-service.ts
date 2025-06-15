@@ -4,7 +4,17 @@
  * This service uses AI to generate tailored responses for job application questions,
  * select optimal choices from multiple-choice questions, and create custom cover 
  * letters based on the user's profile and job description.
+ * 
+ * Now includes plan-based AI model restrictions and feature access control.
  */
+
+import { 
+  hasAIModelAccess, 
+  hasAIReliability, 
+  getPrimaryAIModel, 
+  getAvailableAIModels,
+  isValidPlan 
+} from './plan-config.js';
 
 // API keys from environment variables
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -89,6 +99,7 @@ function validateAIResponse(question: string, response: string): boolean {
  * @param userProfile Additional user profile information
  * @param jobDescription The job description for context
  * @param qaContext Optional context data for QA_* pattern fields
+ * @param userPlan The user's subscription plan (for AI model access control)
  * @returns Promise resolving to a generated answer
  */
 export async function generateApplicationAnswer(
@@ -97,7 +108,8 @@ export async function generateApplicationAnswer(
   resumeText: string,
   userProfile: any,
   jobDescription: string,
-  qaContext?: any
+  qaContext?: any,
+  userPlan?: string
 ): Promise<string> {
   // Determine field type and use specialized prompts when appropriate
   const fieldNameLower = fieldName.toLowerCase();
@@ -205,16 +217,56 @@ export async function generateApplicationAnswer(
     }
   }
   
-  // Try OpenAI first if key is available
-  if (OPENAI_API_KEY) {
+  // 🔒 PLAN-BASED AI MODEL ACCESS CONTROL
+  
+  // Validate user plan
+  if (userPlan && !isValidPlan(userPlan)) {
+    console.warn(`❌ Invalid user plan: ${userPlan}. Using generic answers only.`);
+    return getGenericAnswer(question, fieldName);
+  }
+  
+  // Get available AI models for the user's plan
+  const availableModels = userPlan ? getAvailableAIModels(userPlan) : [];
+  const hasReliabilityFeature = userPlan ? hasAIReliability(userPlan) : false;
+  
+  // Log plan restrictions for debugging
+  if (userPlan) {
+    console.log(`🔐 User plan: ${userPlan}`);
+    console.log(`🤖 Available AI models: ${availableModels.join(', ')}`);
+    console.log(`⚡ 24/7 AI Reliability: ${hasReliabilityFeature ? 'YES' : 'NO'}`);
+  }
+  
+  // Check if user can access OpenAI models
+  const canUseOpenAI = !userPlan || 
+    availableModels.some(model => model.includes('gpt-4') || model.includes('gpt-3.5'));
+  
+  // Check if user can access Anthropic models  
+  const canUseAnthropic = !userPlan || 
+    availableModels.some(model => model.includes('claude'));
+  
+  // Determine which OpenAI model to use based on plan
+  let openAIModel = 'gpt-4o'; // default
+  if (userPlan) {
+    if (availableModels.includes('gpt-4o-mini')) {
+      openAIModel = 'gpt-4o-mini';
+    } else if (availableModels.includes('gpt-4o')) {
+      openAIModel = 'gpt-4o';
+    }
+  }
+  
+  // Try OpenAI first if user has access and key is available
+  if (canUseOpenAI && OPENAI_API_KEY) {
     try {
+      console.log(`🔄 Using OpenAI model: ${openAIModel} for user plan: ${userPlan || 'unknown'}`);
+      
       const openAIResponse = await generateAnswerWithOpenAI(
         enhancedQuestion, 
         fieldName, 
         resumeText, 
         userProfile, 
         jobDescription,
-        enhancedPrompt
+        enhancedPrompt,
+        openAIModel
       );
       
       // For QA pattern fields, use more lenient validation
@@ -224,10 +276,11 @@ export async function generateApplicationAnswer(
       if (!shouldValidate || validateAIResponse(enhancedQuestion, openAIResponse)) {
         return openAIResponse;
       } else {
-        console.warn(`OpenAI response validation failed for question "${question}" - trying Anthropic`);
+        console.warn(`OpenAI response validation failed for question "${question}"`);
         
-        // If OpenAI validation fails, try Anthropic as fallback (if available)
-        if (ANTHROPIC_API_KEY) {
+        // Only try Anthropic fallback if user has 24/7 reliability feature (GOLD plans)
+        if (hasReliabilityFeature && canUseAnthropic && ANTHROPIC_API_KEY) {
+          console.log(`⚡ Using 24/7 AI Reliability - trying Anthropic fallback`);
           const anthropicResponse = await generateAnswerWithAnthropic(
             enhancedQuestion, 
             fieldName, 
@@ -241,17 +294,20 @@ export async function generateApplicationAnswer(
           if (!shouldValidate || validateAIResponse(enhancedQuestion, anthropicResponse)) {
             return anthropicResponse;
           }
+        } else if (!hasReliabilityFeature && userPlan) {
+          console.log(`⚠️ OpenAI failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
         }
         
-        // Both APIs failed validation, return a generic answer
-        console.warn(`All AI responses failed validation for question "${question}" - using generic answer`);
+        // Fallback to generic answer
+        console.warn(`All available AI methods failed validation for question "${question}" - using generic answer`);
         return getGenericAnswer(question, fieldName);
       }
     } catch (error) {
       console.error("Error with OpenAI answer generation:", error);
       
-      // If Anthropic is available, try it as fallback
-      if (ANTHROPIC_API_KEY) {
+      // Only try Anthropic fallback if user has 24/7 reliability feature (GOLD plans)
+      if (hasReliabilityFeature && canUseAnthropic && ANTHROPIC_API_KEY) {
+        console.log(`⚡ OpenAI error - using 24/7 AI Reliability fallback`);
         try {
           const anthropicResponse = await generateAnswerWithAnthropic(
             enhancedQuestion, 
@@ -268,21 +324,24 @@ export async function generateApplicationAnswer(
           // Validate Anthropic response (if not a QA field with enhanced context)
           if (!shouldValidate || validateAIResponse(enhancedQuestion, anthropicResponse)) {
             return anthropicResponse;
-          } else {
-            console.warn(`Anthropic response validation failed for question "${question}" - using generic answer`);
           }
+          console.warn(`Anthropic response validation failed for question "${question}" - using generic answer`);
         } catch (anthropicError) {
           console.error("Error with Anthropic answer generation:", anthropicError);
         }
+      } else if (!hasReliabilityFeature && userPlan) {
+        console.log(`⚠️ OpenAI failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
       }
       
-      // If no AI services available or all failed, return a generic answer
+      // Return generic answer if all AI methods fail
       return getGenericAnswer(question, fieldName);
     }
-  } 
-  // If no OpenAI key but Anthropic is available, use Anthropic
-  else if (ANTHROPIC_API_KEY) {
+  }
+  // If no OpenAI access but user can use Anthropic, use Anthropic directly
+  else if (canUseAnthropic && ANTHROPIC_API_KEY) {
     try {
+      console.log(`🔄 Using Anthropic as primary AI model for user plan: ${userPlan || 'unknown'}`);
+      
       const anthropicResponse = await generateAnswerWithAnthropic(
         enhancedQuestion, 
         fieldName, 
@@ -298,19 +357,18 @@ export async function generateApplicationAnswer(
       // Validate Anthropic response (if not a QA field with enhanced context)
       if (!shouldValidate || validateAIResponse(enhancedQuestion, anthropicResponse)) {
         return anthropicResponse;
-      } else {
-        console.warn(`Anthropic response validation failed for question "${question}" - using generic answer`);
-        return getGenericAnswer(question, fieldName);
       }
+      console.warn(`Anthropic response validation failed for question "${question}" - using generic answer`);
+      
     } catch (error) {
       console.error("Error with Anthropic answer generation:", error);
-      return getGenericAnswer(question, fieldName);
     }
-  } 
-  // If no AI services are available, return a generic answer
-  else {
-    return getGenericAnswer(question, fieldName);
+  } else if (userPlan) {
+    console.warn(`❌ User plan (${userPlan}) does not have access to any available AI models`);
   }
+  
+  // Fallback to generic answer if no API keys or all methods fail
+  return getGenericAnswer(question, fieldName);
 }
 
 /**
@@ -322,6 +380,7 @@ export async function generateApplicationAnswer(
  * @param jobDescription The job description
  * @param company (optional) The company name (preferred)
  * @param jobTitle (optional) The job title (preferred)
+ * @param userPlan (optional) The user's subscription plan (for AI model access control)
  * @returns Promise resolving to a generated cover letter
  */
 export async function generateCoverLetter(
@@ -329,26 +388,52 @@ export async function generateCoverLetter(
   userProfile: any,
   jobDescription: string,
   company?: string,
-  jobTitle?: string
+  jobTitle?: string,
+  userPlan?: string
 ): Promise<string> {
-  // Try OpenAI first if key is available
-  if (OPENAI_API_KEY) {
+  // 🔒 PLAN-BASED AI MODEL ACCESS CONTROL FOR COVER LETTERS
+  
+  // Validate user plan
+  if (userPlan && !isValidPlan(userPlan)) {
+    console.warn(`❌ Invalid user plan: ${userPlan}. Using generic cover letter.`);
+    return getGenericCoverLetter(userProfile, jobDescription);
+  }
+  
+  // Get available AI models for the user's plan
+  const availableModels = userPlan ? getAvailableAIModels(userPlan) : [];
+  const hasReliabilityFeature = userPlan ? hasAIReliability(userPlan) : false;
+  
+  // Check if user can access OpenAI models
+  const canUseOpenAI = !userPlan || 
+    availableModels.some(model => model.includes('gpt-4') || model.includes('gpt-3.5'));
+  
+  // Check if user can access Anthropic models  
+  const canUseAnthropic = !userPlan || 
+    availableModels.some(model => model.includes('claude'));
+
+  // Try OpenAI first if user has access and key is available
+  if (canUseOpenAI && OPENAI_API_KEY) {
     try {
       return await generateCoverLetterWithOpenAI(resumeText, userProfile, jobDescription, company, jobTitle);
     } catch (error) {
       console.error("Error with OpenAI cover letter generation:", error);
-      // If Anthropic is available, try it as fallback
-      if (ANTHROPIC_API_KEY) {
+      // Only try Anthropic fallback if user has 24/7 reliability feature (GOLD plans)
+      if (hasReliabilityFeature && canUseAnthropic && ANTHROPIC_API_KEY) {
+        console.log(`⚡ OpenAI cover letter failed - using 24/7 AI Reliability fallback`);
         return await generateCoverLetterWithAnthropic(resumeText, userProfile, jobDescription, company, jobTitle);
+      } else if (!hasReliabilityFeature && userPlan) {
+        console.log(`⚠️ OpenAI cover letter failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
       }
       // If no AI services available, return a generic cover letter
       return getGenericCoverLetter(userProfile, jobDescription);
     }
-  } else if (ANTHROPIC_API_KEY) {
+  } else if (canUseAnthropic && ANTHROPIC_API_KEY) {
     return await generateCoverLetterWithAnthropic(resumeText, userProfile, jobDescription, company, jobTitle);
-  } else {
-    return getGenericCoverLetter(userProfile, jobDescription);
+  } else if (userPlan) {
+    console.warn(`❌ User plan (${userPlan}) does not have access to any available AI models for cover letters`);
   }
+  
+  return getGenericCoverLetter(userProfile, jobDescription);
 }
 
 /**
@@ -360,7 +445,8 @@ async function generateAnswerWithOpenAI(
   resumeText: string, 
   userProfile: any, 
   jobDescription: string,
-  isEnhancedQAPrompt: boolean = false
+  isEnhancedQAPrompt: boolean = false,
+  model: string = 'gpt-4o'
 ): Promise<string> {
   // Build a compact user profile summary
   const profileSummary = buildProfileSummary(userProfile);
@@ -418,7 +504,7 @@ Please provide a professional answer to this application question.`;
       "Authorization": `Bearer ${OPENAI_API_KEY}`
     },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model: model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
@@ -748,7 +834,8 @@ export async function selectBestOptionWithAI(
   userProfile: any,
   jobDescription: string,
   fieldName?: string,
-  qaContext?: any
+  qaContext?: any,
+  userPlan?: string
 ): Promise<number> {
   // If no options or only one option, return the first one
   if (!options || options.length === 0) return 0;
@@ -825,27 +912,47 @@ export async function selectBestOptionWithAI(
     }
   }
   
-  // Try AI selection if keys are available
-  if (OPENAI_API_KEY) {
+  // 🔒 PLAN-BASED AI MODEL ACCESS CONTROL FOR OPTION SELECTION
+  
+  // Get available AI models for the user's plan
+  const availableModels = userPlan ? getAvailableAIModels(userPlan) : [];
+  const hasReliabilityFeature = userPlan ? hasAIReliability(userPlan) : false;
+  
+  // Check if user can access OpenAI models
+  const canUseOpenAI = !userPlan || 
+    availableModels.some(model => model.includes('gpt-4') || model.includes('gpt-3.5'));
+  
+  // Check if user can access Anthropic models  
+  const canUseAnthropic = !userPlan || 
+    availableModels.some(model => model.includes('claude'));
+
+  // Try AI selection if user has access and keys are available
+  if (canUseOpenAI && OPENAI_API_KEY) {
     try {
       return await selectOptionWithOpenAI(question, options, resumeText, userProfile, jobDescription);
     } catch (error) {
       console.error("Error with OpenAI option selection:", error);
       
-      if (ANTHROPIC_API_KEY) {
+      // Only try Anthropic fallback if user has 24/7 reliability feature (GOLD plans)
+      if (hasReliabilityFeature && canUseAnthropic && ANTHROPIC_API_KEY) {
+        console.log(`⚡ OpenAI option selection failed - using 24/7 AI Reliability fallback`);
         try {
           return await selectOptionWithAnthropic(question, options, resumeText, userProfile, jobDescription);
         } catch (error) {
           console.error("Error with Anthropic option selection:", error);
         }
+      } else if (!hasReliabilityFeature && userPlan) {
+        console.log(`⚠️ OpenAI option selection failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
       }
     }
-  } else if (ANTHROPIC_API_KEY) {
+  } else if (canUseAnthropic && ANTHROPIC_API_KEY) {
     try {
       return await selectOptionWithAnthropic(question, options, resumeText, userProfile, jobDescription);
     } catch (error) {
       console.error("Error with Anthropic option selection:", error);
     }
+  } else if (userPlan) {
+    console.warn(`❌ User plan (${userPlan}) does not have access to any available AI models for option selection`);
   }
   
   // Default to first option if AI selection fails

@@ -40,6 +40,13 @@ import {
   testAutoApplyWithAdzuna,
   testAdzunaHealth
 } from "./routes/adzuna-test-routes.js";
+import { 
+  attachPlanInfo, 
+  requireAIAccess, 
+  requirePremiumFeature, 
+  addModelInfo,
+  handlePlanErrors 
+} from "./utils/plan-middleware.js";
 
 // Configure multer for memory storage
 const upload = multer({
@@ -65,6 +72,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Setup authentication routes
   setupAuth(app);
+
+  // 🎫 PLAN-BASED ACCESS CONTROL MIDDLEWARE
+  // Attach plan information to all authenticated requests
+  app.use(attachPlanInfo);
+  app.use(addModelInfo);
 
   // Setup profile management routes
   registerProfileRoutes(app);
@@ -612,7 +624,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auto-apply endpoints
 
   // Start auto-apply process
-  app.post("/api/auto-apply/start", async (req, res) => {
+  app.post("/api/auto-apply/start", requireAIAccess, async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Not authenticated" });
     }
@@ -1578,6 +1590,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   });
+
+  // 🚨 PLAN-BASED ERROR HANDLING
+  // Handle plan restriction errors
+  app.use(handlePlanErrors);
 
   const httpServer = createServer(app);
   return httpServer;
