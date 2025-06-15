@@ -106,7 +106,7 @@ export async function cleanupJobLinks(): Promise<void> {
     });
 
     if (toDemote.length === 0) {
-      console.log('No duplicates found to demote.');
+      // console.log('No duplicates found to demote.');
       return;
     }
 
@@ -116,7 +116,7 @@ export async function cleanupJobLinks(): Promise<void> {
       [toDemote]
     );
 
-    console.log(`✅ Demoted ${updateRes.rowCount} job_links to priority=0`);
+    // console.log(`✅ Demoted ${updateRes.rowCount} job_links to priority=0`);
   } catch (err) {
     console.error('Error in cleanupJobLinks:', err);
   } finally {

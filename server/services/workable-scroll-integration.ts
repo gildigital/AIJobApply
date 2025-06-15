@@ -32,7 +32,7 @@ export async function getWorkableJobsForUser(
     ? options.useScrollingScraper 
     : USE_SCROLL_BASED_SCRAPER;
   
-  console.log(`Using ${useScrolling ? 'SCROLL-BASED' : 'PAGINATION-BASED'} scraper for Workable jobs`);
+  // console.log(`Using ${useScrolling ? 'SCROLL-BASED' : 'PAGINATION-BASED'} scraper for Workable jobs`);
   
   if (useScrolling) {
     // The scroll-based implementation uses the original implementation's wrapper function

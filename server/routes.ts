@@ -250,9 +250,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const filename = req.file.originalname;
 
       // Extract text from the PDF
-      console.log("[Resume Upload] Starting PDF text extraction...");
+      // console.log("[Resume Upload] Starting PDF text extraction...");
       const resumeText = await extractTextFromPDFBase64(fileData);
-      console.log("[Resume Upload] Extracted text length:", resumeText?.length || 0, "characters");
+      // console.log("[Resume Upload] Extracted text length:", resumeText?.length || 0, "characters");
 
       // Generate a user summary from the resume text
       const userSummary = await generateUserSummary(resumeText);
@@ -796,7 +796,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         "Searching for matching jobs...";
 
       // Get jobs from Workable based on user profile
-      console.log(`Finding jobs for user ${userIdToUse}...`);
+      // console.log(`Finding jobs for user ${userIdToUse}...`);
 
       // Extract useScrolling parameter from request body (default to undefined to use the global feature flag)
       const { useScrolling } = req.body;
@@ -823,7 +823,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const { jobs, hasMore, continueToken: newContinueToken } = jobResult;
-      console.log(`Found ${jobs.length} jobs from Workable, hasMore: ${hasMore}`);
+      // console.log(`Found ${jobs.length} jobs from Workable, hasMore: ${hasMore}`);
 
       // Return the jobs with appropriate message
       const successMessage = jobs.length > 0
@@ -1408,7 +1408,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 console.error(`Invalid plan ID: ${planId} is not in valid subscription plans`);
               }
 
-              console.log(`User ${userId} subscribed to ${planId} - Payment completed`);
+              // console.log(`User ${userId} subscribed to ${planId} - Payment completed`);
             } catch (error) {
               console.error('Error processing subscription:', error);
               return res.status(500).json({ error: 'Failed to process subscription' });
@@ -1425,7 +1425,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const user = await storage.getUserByStripeCustomerId(customerId);
 
               if (user) {
-                console.log(`Subscription created for user ${user.id} (Customer: ${customerId}) - Subscription ID: ${subscription.id}`);
+                // console.log(`Subscription created for user ${user.id} (Customer: ${customerId}) - Subscription ID: ${subscription.id}`);
 
                 // Store the subscription ID
                 await storage.updateUser(user.id, {
@@ -1450,7 +1450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const user = await storage.getUserByStripeCustomerId(customerId);
 
               if (user) {
-                console.log(`Subscription cancelled for user ${user.id} (Customer: ${customerId}) - Subscription ID: ${subscription.id}`);
+                // console.log(`Subscription cancelled for user ${user.id} (Customer: ${customerId}) - Subscription ID: ${subscription.id}`);
 
                 // Let the subscription run until the end date, keep the plan as is
                 // If you want to immediately cancel, you could set subscriptionPlan back to "FREE"
@@ -1476,13 +1476,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const user = await storage.getUserByStripeCustomerId(customerId);
 
               if (user) {
-                console.log(`Payment failed for user ${user.id} (Customer: ${customerId}) - Invoice: ${invoice.id}`);
+                // console.log(`Payment failed for user ${user.id} (Customer: ${customerId}) - Invoice: ${invoice.id}`);
 
                 // Optional: You could add logic here to notify the user or mark the subscription as failed
                 // For example, add a failedPaymentCount field to the user schema and increment it
 
                 // For now, just log the failure
-                console.log(`Payment failed for invoice ${invoice.id}, amount: ${invoice.amount_due}, customer: ${customerId}`);
+                // console.log(`Payment failed for invoice ${invoice.id}, amount: ${invoice.amount_due}, customer: ${customerId}`);
               } else {
                 console.error(`Could not find user with Stripe customer ID: ${customerId}`);
               }
@@ -1528,7 +1528,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         searchLocation = user?.location || "United States";
       }
 
-      console.log(`Searching for jobs with keywords: [${keywordArray.join(', ')}] in location: ${searchLocation}`);
+      // console.log(`Searching for jobs with keywords: [${keywordArray.join(', ')}] in location: ${searchLocation}`);
 
       const jobs = await searchJobs(req.user.id, {
         keywords: keywordArray.length > 0 ? keywordArray : undefined,

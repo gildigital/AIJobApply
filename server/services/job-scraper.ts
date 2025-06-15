@@ -37,7 +37,7 @@ export async function searchJobs(userId: number, searchParams: {
   limit?: number
 }): Promise<JobListing[]> {
   try {
-    console.log(`🔍 searchJobs called with params:`, JSON.stringify(searchParams));
+    // console.log(`🔍 searchJobs called with params:`, JSON.stringify(searchParams));
     
     // Get user data for personalized search
     const user = await storage.getUser(userId);
@@ -57,12 +57,12 @@ export async function searchJobs(userId: number, searchParams: {
     // The field is jobTitlesOfInterest in the TypeScript code, but we handle both formats just in case
     // the data model or API returns it differently
     if (profile?.jobTitlesOfInterest && profile.jobTitlesOfInterest.length > 0) {
-      console.log(`✅ Using job titles from profile: ${profile.jobTitlesOfInterest.join(', ')}`);
+      // console.log(`✅ Using job titles from profile: ${profile.jobTitlesOfInterest.join(', ')}`);
       extractedKeywords = [...extractedKeywords, ...profile.jobTitlesOfInterest];
     } else if (profile && (profile as any).job_titles_of_interest && (profile as any).job_titles_of_interest.length > 0) {
       // Access snake_case version using type assertion
       const jobTitles = (profile as any).job_titles_of_interest;
-      console.log(`✅ Using job titles from profile (snake_case property): ${jobTitles.join(', ')}`);
+      // console.log(`✅ Using job titles from profile (snake_case property): ${jobTitles.join(', ')}`);
       extractedKeywords = [...extractedKeywords, ...jobTitles];
     }
     
@@ -73,7 +73,7 @@ export async function searchJobs(userId: number, searchParams: {
         ? extractedKeywords 
         : await extractKeywordsFromUser(user, resume);
     
-    console.log(`Final keywords for search: ${keywords.join(', ')}`);
+    // console.log(`Final keywords for search: ${keywords.join(', ')}`);
     
     // Default location if none provided (can be customized per user)
     const location = searchParams.location || "United States";
@@ -92,13 +92,13 @@ export async function searchJobs(userId: number, searchParams: {
         // Just use the city name for better results with Adzuna
         if (parts[0].length > 0) {
           searchLocation = parts[0];
-          console.log(`Simplified location from "${location}" to "${searchLocation}" for better API results`);
+          // console.log(`Simplified location from "${location}" to "${searchLocation}" for better API results`);
         }
       }
     }
     
     // Search Adzuna for jobs
-    console.log(`Searching Adzuna for jobs in ${searchLocation} with keywords: ${keywords.join(", ")}`);
+    // console.log(`Searching Adzuna for jobs in ${searchLocation} with keywords: ${keywords.join(", ")}`);
     const adzunaJobs = await searchAdzunaJobs(keywords, searchLocation, limit);
     
     return adzunaJobs;
@@ -131,7 +131,7 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
     
     // If we have specific keywords, search for each one individually
     if (keywords.length > 0) {
-      console.log(`Making separate API requests for ${keywords.length} job titles`);
+      // console.log(`Making separate API requests for ${keywords.length} job titles`);
       
       // Create a search array - use original keywords plus some fallbacks if we have few keywords
       const searchQueries = [...keywords];
@@ -157,7 +157,7 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
         }
         searchCount++;
         
-        console.log(`Search ${searchCount}/${maxSearches}: "${query}" in ${location}`);
+        // console.log(`Search ${searchCount}/${maxSearches}: "${query}" in ${location}`);
         
         let apiUrl = "";
         let isRemoteSearch = false;
@@ -169,14 +169,14 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
           // Fix: Only add remote keyword if it's not already in the query
           const queryWithRemote = query.toLowerCase().includes('remote') ? query : query + " remote";
           apiUrl = `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=${limit * 2}&what=${encodeURIComponent(queryWithRemote)}&content-type=application/json`;
-          console.log(`Searching for remote "${queryWithRemote}" jobs nationwide`);
+          // console.log(`Searching for remote "${queryWithRemote}" jobs nationwide`);
         } else {
           // For location-based jobs, use the location parameter
           apiUrl = `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=${limit}&what=${encodeURIComponent(query)}&where=${encodeURIComponent(location)}&content-type=application/json`;
-          console.log(`Searching for "${query}" jobs in ${location}`);
+          // console.log(`Searching for "${query}" jobs in ${location}`);
         }
         
-        console.log("API URL:", apiUrl);
+        // console.log("API URL:", apiUrl);
         
         try {
           const response = await fetch(apiUrl);
@@ -188,10 +188,10 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
           
           const data = await response.json();
           
-          console.log(`Adzuna API returned ${data?.count || 0} results for "${query}" in ${location}`);
+          // console.log(`Adzuna API returned ${data?.count || 0} results for "${query}" in ${location}`);
           
           if (!data.results || !Array.isArray(data.results) || data.results.length === 0) {
-            console.log(`No results for "${query}" in ${location}, trying next search`);
+            // console.log(`No results for "${query}" in ${location}, trying next search`);
             continue;
           }
           
@@ -207,7 +207,7 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
             externalJobId: job.id?.toString() || "",
           }));
           
-          console.log(`Mapped ${mappedJobs.length} jobs for "${query}" in ${location}`);
+          // console.log(`Mapped ${mappedJobs.length} jobs for "${query}" in ${location}`);
           
           // If this was a remote search, filter for jobs that mention remote
           if (isRemoteSearch) {
@@ -217,7 +217,7 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
               return remoteTerms.some(term => jobText.includes(term));
             });
             
-            console.log(`Filtered to ${remoteJobs.length} actual remote jobs for "${query}"`);
+            // console.log(`Filtered to ${remoteJobs.length} actual remote jobs for "${query}"`);
             allJobs = [...allJobs, ...remoteJobs];
           } else {
             allJobs = [...allJobs, ...mappedJobs];
@@ -230,7 +230,7 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
     } else {
       // No specific keywords provided, use default search
       const defaultQueries = ['software developer', 'entry level developer', 'junior developer'];
-      console.log(`No specific job titles provided. Using defaults: ${defaultQueries.join(', ')}`);
+      // console.log(`No specific job titles provided. Using defaults: ${defaultQueries.join(', ')}`);
       
       for (const query of defaultQueries.slice(0, 2)) { // Limit to 2 default searches
         let apiUrl = "";
@@ -243,8 +243,8 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
           apiUrl = `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=${limit}&what=${encodeURIComponent(query)}&where=${encodeURIComponent(location)}&content-type=application/json`;
         }
         
-        console.log(`Default search for "${query}" in ${location}`);
-        console.log("API URL:", apiUrl);
+        // console.log(`Default search for "${query}" in ${location}`);
+        // console.log("API URL:", apiUrl);
         
         try {
           const response = await fetch(apiUrl);
@@ -256,10 +256,10 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
           
           const data = await response.json();
           
-          console.log(`Adzuna API returned ${data?.count || 0} results for "${query}" in ${location}`);
+          // console.log(`Adzuna API returned ${data?.count || 0} results for "${query}" in ${location}`);
           
           if (!data.results || !Array.isArray(data.results) || data.results.length === 0) {
-            console.log(`No results for "${query}" in ${location}, trying next search`);
+            // console.log(`No results for "${query}" in ${location}, trying next search`);
             continue;
           }
           
@@ -275,7 +275,7 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
             externalJobId: job.id?.toString() || "",
           }));
           
-          console.log(`Mapped ${mappedJobs.length} jobs for "${query}" in ${location}`);
+          // console.log(`Mapped ${mappedJobs.length} jobs for "${query}" in ${location}`);
           
           // If this was a remote search, filter for jobs that mention remote
           if (isRemoteSearch) {
@@ -285,7 +285,7 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
               return remoteTerms.some(term => jobText.includes(term));
             });
             
-            console.log(`Filtered to ${remoteJobs.length} actual remote jobs for "${query}"`);
+            // console.log(`Filtered to ${remoteJobs.length} actual remote jobs for "${query}"`);
             allJobs = [...allJobs, ...remoteJobs];
           } else {
             allJobs = [...allJobs, ...mappedJobs];
@@ -297,7 +297,7 @@ async function searchAdzunaJobs(keywords: string[], location: string, limit: num
       }
     }
     
-    console.log(`Completed all searches. Found ${allJobs.length} total jobs.`);
+    // console.log(`Completed all searches. Found ${allJobs.length} total jobs.`);
     return allJobs;
   } catch (error) {
     console.error("Error in searchAdzunaJobs:", error);

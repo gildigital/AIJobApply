@@ -260,7 +260,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateJob(id: number, data: Partial<JobTracker>): Promise<JobTracker | undefined> {
     try {
-      console.log("Updating job:", id);
+      // console.log("Updating job:", id);
 
       // Add the updated timestamp
       const updateData = {
@@ -275,7 +275,7 @@ export class DatabaseStorage implements IStorage {
         .where(eq(jobTracker.id, id))
         .returning();
 
-      console.log("Update result:", updatedJob ? "Success" : "No job updated");
+      // console.log("Update result:", updatedJob ? "Success" : "No job updated");
       return updatedJob || undefined;
     } catch (error) {
       console.error("Error in updateJob:", error);
@@ -604,7 +604,7 @@ export class DatabaseStorage implements IStorage {
       return insertedLinks;
     } catch (error) {
       // If conflict happens, still return empty array rather than throwing
-      console.log('Some job links may have been duplicates, continuing...');
+      // console.log('Some job links may have been duplicates, continuing...');
       return [];
     }
   }

@@ -5,7 +5,7 @@ import { db } from "../db.js";
  */
 export async function runMigration() {
   try {
-    console.log("Creating job_links table...");
+    // console.log("Creating job_links table...");
     
     // Create the job_links table
     await db.execute(`
@@ -26,14 +26,14 @@ export async function runMigration() {
     `);
     
     // Add unique constraint to prevent duplicate URLs for the same user
-    console.log("Adding unique constraint for user_id and url...");
+    // console.log("Adding unique constraint for user_id and url...");
     await db.execute(`
       CREATE UNIQUE INDEX IF NOT EXISTS job_links_user_url_unique 
       ON job_links(user_id, url);
     `);
     
     // Add index for efficient querying
-    console.log("Adding indexes for efficient querying...");
+    // console.log("Adding indexes for efficient querying...");
     await db.execute(`
       CREATE INDEX IF NOT EXISTS job_links_user_status_priority_idx 
       ON job_links(user_id, status, priority DESC);
@@ -44,7 +44,7 @@ export async function runMigration() {
       ON job_links(external_job_id);
     `);
     
-    console.log("Migration completed successfully");
+    // console.log("Migration completed successfully");
     return { success: true, message: "Created job_links table with indexes and constraints" };
   } catch (error) {
     console.error("Migration failed:", error);

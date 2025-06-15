@@ -91,7 +91,7 @@ export default function FindJobsCard() {
       } catch (error) {
         // If this is a timeout for pagination, just return what we have
         if ((error as any).name === 'AbortError' && options?.continueToken) {
-          console.log('Pagination request timed out, but we already have some results');
+          // console.log('Pagination request timed out, but we already have some results');
           return {
             success: true,
             jobs: [],
@@ -241,7 +241,7 @@ export default function FindJobsCard() {
     // Store current token in a local variable because state updates are async
     const currentToken = continueToken;
     
-    console.log("Loading more jobs with token:", currentToken);
+    // console.log("Loading more jobs with token:", currentToken);
     setIsLoadingMore(true);
     findJobsMutation.mutate({ continueToken: currentToken });
   };

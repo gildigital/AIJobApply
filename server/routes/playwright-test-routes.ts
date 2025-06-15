@@ -29,7 +29,7 @@ export function registerPlaywrightTestRoutes(app: Express) {
         playwrightUrl = `https://${playwrightUrl}`;
       }
       
-      console.log(`Using Playwright worker.`);
+      // console.log(`Using Playwright worker.`);
       
       // Call the Playwright worker to take a screenshot
       const response = await fetch(`${playwrightUrl}/screenshot`, {
@@ -87,7 +87,7 @@ export function registerPlaywrightTestRoutes(app: Express) {
         String(req.query.url) : 
         'https://apply.workable.com/balto/j/9BE3FA1FB7/';
       
-      console.log(`Testing Playwright HTML retrieval with URL: ${url}`);
+      // console.log(`Testing Playwright HTML retrieval with URL: ${url}`);
       
       // Check if Playwright worker URL is configured
       if (!process.env.VITE_PLAYWRIGHT_WORKER_URL) {
@@ -105,7 +105,7 @@ export function registerPlaywrightTestRoutes(app: Express) {
         playwrightUrl = `https://${playwrightUrl}`;
       }
       
-      console.log(`Using Playwright worker.`);
+      // console.log(`Using Playwright worker.`);
       
       // Call the Playwright worker to fetch HTML
       const response = await fetch(`${playwrightUrl}/content`, {

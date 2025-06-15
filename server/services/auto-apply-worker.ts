@@ -75,11 +75,11 @@ function getUTCDateString(d: Date): string {
  */
 export function startAutoApplyWorker(): void {
   if (isWorkerRunning) {
-    console.log("[Auto-Apply Worker] Worker already running");
+    // console.log("[Auto-Apply Worker] Worker already running");
     return;
   }
 
-  console.log("[Auto-Apply Worker] Starting resilient worker");
+  // console.log("[Auto-Apply Worker] Starting resilient worker");
   isWorkerRunning = true;
   consecutiveErrors = 0;
   workerStartTime = new Date();
@@ -97,7 +97,7 @@ export function startAutoApplyWorker(): void {
   // Set up process-level error handlers to prevent crashes
   setupGlobalErrorHandlers();
 
-  console.log("[Auto-Apply Worker] Worker started successfully with enhanced error recovery");
+  // console.log("[Auto-Apply Worker] Worker started successfully with enhanced error recovery");
 }
 
 /**
@@ -105,11 +105,11 @@ export function startAutoApplyWorker(): void {
  */
 export function stopAutoApplyWorker(): void {
   if (!isWorkerRunning) {
-    console.log("[Auto-Apply Worker] Worker not running");
+    // console.log("[Auto-Apply Worker] Worker not running");
     return;
   }
 
-  console.log("[Auto-Apply Worker] Stopping worker");
+  // console.log("[Auto-Apply Worker] Stopping worker");
   isWorkerRunning = false;
 
   if (workerInterval) {
@@ -122,7 +122,7 @@ export function stopAutoApplyWorker(): void {
     heartbeatInterval = null;
   }
 
-  console.log("[Auto-Apply Worker] Worker stopped successfully");
+  // console.log("[Auto-Apply Worker] Worker stopped successfully");
 }
 
 /**
@@ -134,7 +134,7 @@ async function processQueuedJobsWithErrorHandling(): Promise<void> {
 
     // Reset error counter on successful run
     if (consecutiveErrors > 0) {
-      console.log(`[Auto-Apply Worker] Recovered from ${consecutiveErrors} consecutive errors`);
+      // console.log(`[Auto-Apply Worker] Recovered from ${consecutiveErrors} consecutive errors`);
       consecutiveErrors = 0;
     }
     lastSuccessfulRun = new Date();
@@ -156,7 +156,7 @@ async function processQueuedJobsWithErrorHandling(): Promise<void> {
       // Restart after delay
       setTimeout(() => {
         if (isWorkerRunning) { // Only restart if we weren't manually stopped
-          console.log("[Auto-Apply Worker] Restarting worker after error recovery delay");
+          // console.log("[Auto-Apply Worker] Restarting worker after error recovery delay");
           consecutiveErrors = 0;
           workerInterval = setInterval(processQueuedJobsWithErrorHandling, WORKER_INTERVAL_MS);
         }
@@ -192,7 +192,7 @@ function logWorkerHeartbeat(): void {
   const timeSinceLastSuccess = Date.now() - lastSuccessfulRun.getTime();
   const minutesSinceSuccess = Math.floor(timeSinceLastSuccess / 60000);
 
-  console.log(`[Auto-Apply Worker] Heartbeat - Uptime: ${uptimeMinutes}m, Jobs processed: ${totalJobsProcessed}, Last success: ${minutesSinceSuccess}m ago, Errors: ${consecutiveErrors}`);
+  // console.log(`[Auto-Apply Worker] Heartbeat - Uptime: ${uptimeMinutes}m, Jobs processed: ${totalJobsProcessed}, Last success: ${minutesSinceSuccess}m ago, Errors: ${consecutiveErrors}`);
 }
 
 /**
@@ -213,7 +213,7 @@ async function processQueuedJobs(): Promise<void> {
     return;
   }
 
-  console.log(`[Auto-Apply Worker] Processing ${pendingJobs.length} jobs`);
+  // console.log(`[Auto-Apply Worker] Processing ${pendingJobs.length} jobs`);
 
   // Process each job
   for (const queuedJob of pendingJobs) {
@@ -238,7 +238,7 @@ async function checkAndQueueJobsForEnabledUsers(): Promise<void> {
     const enabledUsers = users.filter(user => user.isAutoApplyEnabled);
     if (enabledUsers.length === 0) return;
 
-    console.log(`[Auto-Apply Worker] Found ${enabledUsers.length} users to process sequentially.`);
+    // console.log(`[Auto-Apply Worker] Found ${enabledUsers.length} users to process sequentially.`);
 
     // Use a "for...of" loop which works well with "await"
     for (const user of enabledUsers) {
@@ -252,12 +252,12 @@ async function checkAndQueueJobsForEnabledUsers(): Promise<void> {
           continue;
         }
 
-        console.log(`[Auto-Apply Worker] Starting engine for user ${user.id}...`);
+        // console.log(`[Auto-Apply Worker] Starting engine for user ${user.id}...`);
         
         // Use 'await' to ensure we process one user completely before starting the next.
         await startAutoApply(user.id);
 
-        console.log(`[Auto-Apply Worker] Engine finished for user ${user.id}. Waiting for ${DELAY_BETWEEN_USERS_MS / 1000}s...`);
+        // console.log(`[Auto-Apply Worker] Engine finished for user ${user.id}. Waiting for ${DELAY_BETWEEN_USERS_MS / 1000}s...`);
         
         // Add the deliberate pause after each user is processed.
         await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_USERS_MS));
@@ -280,9 +280,9 @@ async function checkAndReactivateStandbyJobs(): Promise<void> {
     // 1) Detect UTC‐day rollover and run dedupe once
     const currentDateString = getUTCDateString(new Date());
     if (currentDateString !== lastCleanupDate) {
-      console.log(
-        `[Auto-Apply Worker] UTC date rolled over ${lastCleanupDate} → ${currentDateString}, running cleanupJobLinks()…`
-      );
+      // console.log(
+        // `[Auto-Apply Worker] UTC date rolled over ${lastCleanupDate} → ${currentDateString}, running cleanupJobLinks()…`
+      // );
       await cleanupJobLinks();
       lastCleanupDate = currentDateString;
     }
@@ -303,9 +303,9 @@ async function checkAndReactivateStandbyJobs(): Promise<void> {
     }
     if (totalStandbyJobs === 0) return;
 
-    console.log(
-      `[Auto-Apply Worker] Checking ${totalStandbyJobs} standby jobs for reactivation`
-    );
+    // console.log(
+      // `[Auto-Apply Worker] Checking ${totalStandbyJobs} standby jobs for reactivation`
+    // );
 
     // 3) For each user, see if they have slots left and reactivate
     for (const [userIdStr, standbyJobs] of Object.entries(jobsByUser)) {
@@ -325,9 +325,9 @@ async function checkAndReactivateStandbyJobs(): Promise<void> {
         const slots = limit - appliedToday;
         const toReactivate = standbyJobs.slice(0, slots);
 
-        console.log(
-          `[Auto-Apply Worker] Reactivating ${toReactivate.length} jobs for user ${userId} (${slots} slots left)`
-        );
+        // console.log(
+          // `[Auto-Apply Worker] Reactivating ${toReactivate.length} jobs for user ${userId} (${slots} slots left)`
+        // );
 
         for (const job of toReactivate) {
           await storage.updateQueuedJob(job.id, {
@@ -463,7 +463,7 @@ async function processJob(queuedJob: JobQueue): Promise<void> {
       // Consider implementing a separate analytics system for:
       // - Skipped applications (incompatible forms, already applied)
       // - Failed applications (network errors, service issues)
-      console.log(`Job ${result} for job ID ${job.id}: ${errorMessage}`);
+      // console.log(`Job ${result} for job ID ${job.id}: ${errorMessage}`);
 
       await storage.updateQueuedJob(queuedJob.id, {
         status: result === "skipped" ? "skipped" : "failed", // Use proper status in queue
@@ -606,7 +606,7 @@ export function ensureWorkerIsRunning(): boolean {
 
   // If worker is not running, start it
   if (!isWorkerRunning) {
-    console.log("[Auto-Apply Worker] Worker not running, starting...");
+    // console.log("[Auto-Apply Worker] Worker not running, starting...");
     startAutoApplyWorker();
     return false; // Worker was started
   }

@@ -6,7 +6,7 @@
     try {
       const urlObj = new URL(searchUrl);
       const query = urlObj.searchParams.get('query') || '';
-      console.log(`Fetching job listings from: ${searchUrl}`);
+      // console.log(`Fetching job listings from: ${searchUrl}`);
 
       // Use Playwright worker to scroll and extract job links
       const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
@@ -40,7 +40,7 @@
             const backoffPriority = Math.max(0.05, 0.5 / Math.pow(2, attempts));
             setTimeout(() => {
               state.searchUrls.push({ url: searchUrl, priority: backoffPriority });
-              console.log(`Re-queued rate-limited URL with priority ${backoffPriority.toFixed(3)} (attempt ${attempts})`);
+              // console.log(`Re-queued rate-limited URL with priority ${backoffPriority.toFixed(3)} (attempt ${attempts})`);
             }, retryAfter * 1000);
           }
           return [];
@@ -52,7 +52,7 @@
       const data = await response.json();
       const jobLinks: string[] = data.jobLinks || [];
       const totalJobsOnPage = jobLinks.length;
-      console.log(`Found ${totalJobsOnPage} unique job links for query "${query}" via infinite scrolling`);
+      // console.log(`Found ${totalJobsOnPage} unique job links for query "${query}" via infinite scrolling`);
 
       let newLinks = state
         ? jobLinks.filter(link => {
@@ -103,8 +103,8 @@
         }
       });
 
-      console.log(`Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl}`);
-      console.log(`Found ${jobListings.length} jobs from ${searchUrl}, added ${jobListings.length} to results`);
+      // console.log(`Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl}`);
+      // console.log(`Found ${jobListings.length} jobs from ${searchUrl}, added ${jobListings.length} to results`);
 
       if (state) {
         state.processedUrls.push(searchUrl);
@@ -120,7 +120,7 @@
         state[queryEffectivenessKey] = previousEffectiveness * (1 - alpha) + effectivenessScore * alpha;
 
         if (jobListings.length === 0) {
-          console.log(`No new jobs for query "${query}". Stopping scroll.`);
+          // console.log(`No new jobs for query "${query}". Stopping scroll.`);
         }
       }
 
@@ -136,11 +136,11 @@
           const retryPriority = Math.max(0.05, 0.3 / errorCount);
           setTimeout(() => {
             state.searchUrls.push({ url: searchUrl, priority: retryPriority });
-            console.log(`Re-queued failed URL with priority ${retryPriority.toFixed(2)} after ${backoffDelay}ms (attempt ${errorCount})`);
+            // console.log(`Re-queued failed URL with priority ${retryPriority.toFixed(2)} after ${backoffDelay}ms (attempt ${errorCount})`);
           }, backoffDelay);
         } else {
           state.processedUrls.push(searchUrl);
-          console.log(`URL failed ${errorCount} times, not retrying: ${searchUrl}`);
+          // console.log(`URL failed ${errorCount} times, not retrying: ${searchUrl}`);
         }
       }
       return [];

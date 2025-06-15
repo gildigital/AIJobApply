@@ -32,7 +32,7 @@ export function registerWorkableSchemaRoutes(app: Express) {
         });
       }
       
-      console.log(`Processing Workable job-listing URL: ${jobUrl}`);
+      // console.log(`Processing Workable job-listing URL: ${jobUrl}`);
       
       // Perform introspection on the job's application form
       const result = await workableScraper.introspectJobForm(jobUrl);
@@ -94,7 +94,7 @@ export function registerWorkableSchemaRoutes(app: Express) {
         });
       }
       
-      console.log(`Processing Workable job application for URL: ${jobUrl}`);
+      // console.log(`Processing Workable job application for URL: ${jobUrl}`);
       
       // Create a test user with minimal data needed for application
       // Include all required properties for the User type

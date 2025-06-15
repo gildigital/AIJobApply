@@ -79,7 +79,7 @@ export default function ResumeUpload({
       formData.append("resume", file);
 
       const url = `${API_BASE_URL}/api/resume`;
-      console.log(`[ResumeUpload] Uploading resume to: ${url}`);
+      // console.log(`[ResumeUpload] Uploading resume to: ${url}`);
 
       const response = await fetch(url, {
         method: "POST",

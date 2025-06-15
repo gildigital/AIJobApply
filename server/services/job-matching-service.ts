@@ -86,13 +86,13 @@ export async function scoreJobFit(userId: number, job: JobListing): Promise<Matc
   
   // Check if we have a cached result
   if (matchCache.has(cacheKey)) {
-    console.log(`Using cached match result for job ${job.jobTitle} at ${job.company}`);
+    // console.log(`Using cached match result for job ${job.jobTitle} at ${job.company}`);
     return matchCache.get(cacheKey)!;
   }
   
   try {
     // Get a match score and explanation from AI
-    console.log(`Scoring job fit for ${job.jobTitle} at ${job.company} using AI`);
+    // console.log(`Scoring job fit for ${job.jobTitle} at ${job.company} using AI`);
     const result = await matchResumeToJob(resumeText, job.description);
     
     // Cache the result

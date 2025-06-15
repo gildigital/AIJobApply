@@ -11,13 +11,13 @@ import pdfParse from 'pdf-parse';
  */
 export async function extractTextFromPDF(pdfBuffer: Buffer): Promise<string> {
   try {
-    console.log('[Resume Parser] Attempting to parse PDF with buffer size:', pdfBuffer.length);
+    // console.log('[Resume Parser] Attempting to parse PDF with buffer size:', pdfBuffer.length);
     const data = await pdfParse(pdfBuffer);
-    console.log('[Resume Parser] PDF parse successful:', {
-      pageCount: data.numpages || 'unknown',
-      version: data.version || 'unknown',
-      textLength: data.text?.length || 0
-    });
+    // console.log('[Resume Parser] PDF parse successful:', {
+      // pageCount: data.numpages || 'unknown',
+      // version: data.version || 'unknown',
+      // textLength: data.text?.length || 0
+    // });
     return data.text || '';
   } catch (error) {
     console.error('[Resume Parser] Error parsing PDF:', error);

@@ -15,7 +15,7 @@ export function registerDirectFetchTestRoutes(app: Express) {
         ? String(req.query.url) 
         : "https://apply.workable.com/balto/j/9BE3FA1FB7/";
       
-      console.log(`Testing direct fetch with URL: ${url}`);
+      // console.log(`Testing direct fetch with URL: ${url}`);
       
       // Fetch with browser-like headers
       const response = await fetch(url, {
@@ -28,7 +28,7 @@ export function registerDirectFetchTestRoutes(app: Express) {
       
       // Check if fetch was successful
       if (!response.ok) {
-        console.log(`Fetch failed with status ${response.status}: ${response.statusText}`);
+        // console.log(`Fetch failed with status ${response.status}: ${response.statusText}`);
         return res.status(500).json({
           success: false,
           message: `Failed to fetch content: ${response.statusText}`,

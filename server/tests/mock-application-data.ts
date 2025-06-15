@@ -35,7 +35,7 @@ const errorTypes = [
 
 // Add mock data to the workableScraper
 export function mockApplicationData() {
-  console.log('Adding mock application data for diagnosis...');
+  // console.log('Adding mock application data for diagnosis...');
   
   // Mock successful data
   successfulUrls.forEach((url, index) => {
@@ -44,7 +44,7 @@ export function mockApplicationData() {
       testEntry: true,
       mockIndex: index
     });
-    console.log(`Added successful URL: ${url} with ${fieldsCount} fields`);
+    // console.log(`Added successful URL: ${url} with ${fieldsCount} fields`);
   });
   
   // Mock problem data - with more problematic URLs for analysis patterns
@@ -58,10 +58,10 @@ export function mockApplicationData() {
     };
     
     workableScraper.logProblemUrl(url, errorType, errorDetails);
-    console.log(`Added problematic URL: ${url} with error type: ${errorType}`);
+    // console.log(`Added problematic URL: ${url} with error type: ${errorType}`);
   });
   
-  console.log('Mock data added successfully');
+  // console.log('Mock data added successfully');
   return workableScraper.getApplicationStatistics();
 }
 
@@ -70,11 +70,11 @@ export function testSpecificUrl(url: string, isSuccess: boolean, details: any = 
   if (isSuccess) {
     const fieldsCount = details.fieldsCount || 8;
     workableScraper.logSuccessfulUrl(url, fieldsCount, details);
-    console.log(`Added successful test URL: ${url} with ${fieldsCount} fields`);
+    // console.log(`Added successful test URL: ${url} with ${fieldsCount} fields`);
   } else {
     const errorType = details.errorType || 'introspection_error';
     workableScraper.logProblemUrl(url, errorType, details);
-    console.log(`Added problematic test URL: ${url} with error type: ${errorType}`);
+    // console.log(`Added problematic test URL: ${url} with error type: ${errorType}`);
   }
   
   // Return current statistics

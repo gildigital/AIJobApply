@@ -101,11 +101,11 @@ export async function submitWorkableApplication(
   job: JobListing,
   matchScore: number,
 ): Promise<"success" | "skipped" | "error"> {
-  console.log(`⏳ Starting application submission process for ${job.jobTitle} at ${job.company}...`);
+  // console.log(`⏳ Starting application submission process for ${job.jobTitle} at ${job.company}...`);
   try {
-    console.log(
-      `Processing Workable application using schema-driven approach for ${job.jobTitle} at ${job.company}`,
-    );
+    // console.log(
+      // `Processing Workable application using schema-driven approach for ${job.jobTitle} at ${job.company}`,
+    // );
 
     // Check if we have a worker URL configured
     const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
@@ -120,7 +120,7 @@ export async function submitWorkableApplication(
       : `https://${workerUrl}`;
 
     // Phase 1: Introspection - Get the schema of the form
-    console.log(`Phase 1: Introspecting form structure for: ${job.applyUrl}`);
+    // console.log(`Phase 1: Introspecting form structure for: ${job.applyUrl}`);
     const rawFormSchema = await workableScraper.introspectJobForm(job.applyUrl);
 
     // Handle the new nested structure
@@ -132,16 +132,16 @@ export async function submitWorkableApplication(
       Array.isArray(rawFormSchema.formSchema.fields)
     ) {
       fields = rawFormSchema.formSchema.fields;
-      console.log(
-        `Using new nested formSchema structure with ${fields.length} fields`,
-      );
+      // console.log(
+        // `Using new nested formSchema structure with ${fields.length} fields`,
+      // );
     }
     // Case 2: Legacy structure with direct fields array
     else if (rawFormSchema?.fields && Array.isArray(rawFormSchema.fields)) {
       fields = rawFormSchema.fields;
-      console.log(
-        `Using legacy formSchema structure with ${fields.length} fields`,
-      );
+      // console.log(
+        // `Using legacy formSchema structure with ${fields.length} fields`,
+      // );
     }
 
     // Validate we have fields
@@ -156,12 +156,12 @@ export async function submitWorkableApplication(
       status: "success",
     };
 
-    console.log(
-      `Introspection successful: Found ${formSchema.fields.length} form fields`,
-    );
+    // console.log(
+      // `Introspection successful: Found ${formSchema.fields.length} form fields`,
+    // );
 
     // Phase 2: Prepare data and submit application
-    console.log(`Phase 2: Preparing form data for submission`);
+    // console.log(`Phase 2: Preparing form data for submission`);
 
     // Prepare the formData object based on the introspected schema
     const formData: Record<string, any> = {};
@@ -170,9 +170,9 @@ export async function submitWorkableApplication(
     const requiredFields = formSchema.fields.filter(
       (field: any) => field.required,
     );
-    console.log(
-      `Found ${requiredFields.length} required fields out of ${formSchema.fields.length} total fields`,
-    );
+    // console.log(
+      // `Found ${requiredFields.length} required fields out of ${formSchema.fields.length} total fields`,
+    // );
 
     // Helper to check if we'll be able to satisfy the required fields
     const canSatisfyRequiredFields = requiredFields.every((field: any) => {
@@ -193,16 +193,16 @@ export async function submitWorkableApplication(
           fieldLabelLower.includes("cv");
         if (isResumeField) {
           if (!resume || !resume.fileData) {
-            console.log(
-              `Missing required resume file for field: ${field.name} (${field.label || "no label"})`,
-            );
+            // console.log(
+              // `Missing required resume file for field: ${field.name} (${field.label || "no label"})`,
+            // );
             return false;
           }
           return true;
         }
-        console.log(
-          `Unknown file field type required: ${field.name} (${field.label || "no label"}) - will try to proceed anyway`,
-        );
+        // console.log(
+          // `Unknown file field type required: ${field.name} (${field.label || "no label"}) - will try to proceed anyway`,
+        // );
         return true;
       }
 
@@ -213,7 +213,7 @@ export async function submitWorkableApplication(
             fieldLabelLower.includes("email")) &&
           !user.email
         ) {
-          console.log(`Missing required email field: ${field.name}`);
+          // console.log(`Missing required email field: ${field.name}`);
           return false;
         }
         if (
@@ -224,7 +224,7 @@ export async function submitWorkableApplication(
           !user.lastName &&
           !(profile && profile.fullName)
         ) {
-          console.log(`Missing required name field: ${field.name}`);
+          // console.log(`Missing required name field: ${field.name}`);
           return false;
         }
         // For other text/textarea/radio/select fields, we can use LLM
@@ -237,7 +237,7 @@ export async function submitWorkableApplication(
     });
 
     if (!canSatisfyRequiredFields) {
-      console.log("Cannot satisfy all required fields, skipping application");
+      // console.log("Cannot satisfy all required fields, skipping application");
       return "skipped";
     }
 
@@ -326,17 +326,17 @@ export async function submitWorkableApplication(
       // This is crucial for reliable field location during submission phase
       if (field.selector) {
         formData[`${fieldName}_selector`] = field.selector;
-        console.log(`Storing selector for field "${fieldName}": ${field.selector}`);
+        // console.log(`Storing selector for field "${fieldName}": ${field.selector}`);
       }
 
-      console.log(
-        `Processing field: ${fieldName} (type: ${fieldType}, label: ${fieldLabel}, required: ${field.required})`,
-      );
+      // console.log(
+        // `Processing field: ${fieldName} (type: ${fieldType}, label: ${fieldLabel}, required: ${field.required})`,
+      // );
 
       // Handle required checkboxes (e.g., GDPR)
       if (fieldType === "checkbox" && field.required) {
         formData[fieldName] = true;
-        console.log(`Mapped "${fieldName}" to true (required checkbox)`);
+        // console.log(`Mapped "${fieldName}" to true (required checkbox)`);
         continue;
       }
 
@@ -350,27 +350,27 @@ export async function submitWorkableApplication(
         ) {
           if (resume && resume.fileData) {
             formData[fieldName] = resume.fileData;
-            console.log(`Mapped "${fieldName}" to resume file data`);
+            // console.log(`Mapped "${fieldName}" to resume file data`);
           } else {
             console.warn(`No resume data available for "${fieldName}"`);
           }
         } else {
-          console.log(
-            `Skipping non-resume file field: ${fieldName} (${fieldLabel})`,
-          );
+          // console.log(
+            // `Skipping non-resume file field: ${fieldName} (${fieldLabel})`,
+          // );
         }
         continue;
       }
 
       // Special handling for known problematic QA fields in GOVX application
       if (fieldName === 'QA_9822728' || fieldName === 'QA_9822729') {
-        console.log(`🔍 Special handling for known problematic field "${fieldName}"`);
+        // console.log(`🔍 Special handling for known problematic field "${fieldName}"`);
         // These fields have SVG issues with "Personal information" labels
         // For these fields, we select the first option to get past required field validation
         if (field.options && field.options.length > 0) {
           // Always use the first option for these fields
           formData[fieldName] = field.options[0].value;
-          console.log(`✅ Mapped problematic SVG field "${fieldName}" to first option "${field.options[0].value}"`);
+          // console.log(`✅ Mapped problematic SVG field "${fieldName}" to first option "${field.options[0].value}"`);
           
           // Add extra context for the playwright worker to help with radio selection
           formData[`${fieldName}_questcontext`] = "Personal information radio field, force select first option";
@@ -380,7 +380,7 @@ export async function submitWorkableApplication(
       
       // Special handling for work authorization field (QA_9822727)
       if (fieldName === 'QA_9822727' || (fieldLabelLower.includes('authorized') && fieldLabelLower.includes('work'))) {
-        console.log(`🔍 Special handling for work authorization field "${fieldName}"`);
+        // console.log(`🔍 Special handling for work authorization field "${fieldName}"`);
         // For this field, we need to get the first option's value for "Yes" rather than hardcoding "CA"
         if (field.options && field.options.length > 0) {
           // Find the "yes" or "authorized" option
@@ -401,20 +401,20 @@ export async function submitWorkableApplication(
             formData[fieldName] = yesOption.value;
             // Add extra context for the playwright worker to help with radio selection
             formData[`${fieldName}_questcontext`] = "Work authorization field, select 'Yes' option";
-            console.log(`✅ Mapped work auth field "${fieldName}" to "${yesOption.value}" (option: "${yesOption.label}")`);
+            // console.log(`✅ Mapped work auth field "${fieldName}" to "${yesOption.value}" (option: "${yesOption.label}")`);
             continue;
           } else {
             // If we can't find a specific "yes" option, use the first option as fallback
             formData[fieldName] = field.options[0].value;
             // Add extra context for the playwright worker to help with radio selection
             formData[`${fieldName}_questcontext`] = "Work authorization field, select first option";
-            console.log(`✅ Mapped work auth field "${fieldName}" to first option "${field.options[0].value}" (fallback)`);
+            // console.log(`✅ Mapped work auth field "${fieldName}" to first option "${field.options[0].value}" (fallback)`);
             continue;
           }
         } else {
           // If no options available, we should set a non-location value
           formData[fieldName] = "Yes";
-          console.log(`✅ Mapped work auth field "${fieldName}" to "Yes" (no options available)`);
+          // console.log(`✅ Mapped work auth field "${fieldName}" to "Yes" (no options available)`);
           continue;
         }
       }
@@ -430,7 +430,7 @@ export async function submitWorkableApplication(
           const value = mapping.value(user, profile);
           if (value) {
             formData[fieldName] = value;
-            console.log(`Mapped "${fieldName}" to "${value}" (basic field)`);
+            // console.log(`Mapped "${fieldName}" to "${value}" (basic field)`);
             isBasicField = true;
           } else {
             console.warn(`No value available for basic field "${fieldName}"`);
@@ -456,7 +456,7 @@ export async function submitWorkableApplication(
             matchScore,
           );
           formData[fieldName] = coverLetter;
-          console.log(`Mapped "${fieldName}" to generated cover letter`);
+          // console.log(`Mapped "${fieldName}" to generated cover letter`);
         } catch (error) {
           console.error(
             `Error generating cover letter for "${fieldName}":`,
@@ -482,9 +482,9 @@ export async function submitWorkableApplication(
           
           if (isQAPattern) {
             if (hasQAContext) {
-              console.log(`Processing QA_* pattern radio/select field "${fieldName}" with enhanced context`);
+              // console.log(`Processing QA_* pattern radio/select field "${fieldName}" with enhanced context`);
             } else {
-              console.log(`Processing QA_* pattern radio/select field "${fieldName}" without enhanced context`);
+              // console.log(`Processing QA_* pattern radio/select field "${fieldName}" without enhanced context`);
             }
           }
           
@@ -496,7 +496,7 @@ export async function submitWorkableApplication(
             
             // Special handling for SVG issues
             if (field.qaContext.hasSvgProblem) {
-              console.log(`⚠️ Field ${fieldName} has SVG label problem - using enhanced context`);
+              // console.log(`⚠️ Field ${fieldName} has SVG label problem - using enhanced context`);
             }
             
             // Use more reliable context sources first in QA_* fields
@@ -546,13 +546,13 @@ export async function submitWorkableApplication(
             // If we have any contextual data, enhance the label
             if (contextParts.length > 0) {
               enhancedLabel = `${contextParts.join('\n')}\n\nOriginal question field text: ${fieldLabel}`;
-              console.log(`Enhanced label for QA_* radio/select field: ${enhancedLabel}`);
+              // console.log(`Enhanced label for QA_* radio/select field: ${enhancedLabel}`);
             }
           }
           
-          console.log(
-            `Using AI to select best option for "${fieldName}" (${enhancedLabel})`,
-          );
+          // console.log(
+            // `Using AI to select best option for "${fieldName}" (${enhancedLabel})`,
+          // );
           const resumeText = user.resumeText || "";
           const bestOptionIndex = await selectBestOptionWithAI(
             enhancedLabel,
@@ -565,15 +565,15 @@ export async function submitWorkableApplication(
             user.subscriptionPlan || "FREE"
           );
           formData[fieldName] = field.options[bestOptionIndex].value;
-          console.log(
-            `Mapped "${fieldName}" to option ${bestOptionIndex + 1}: "${formData[fieldName]}"`,
-          );
+          // console.log(
+            // `Mapped "${fieldName}" to option ${bestOptionIndex + 1}: "${formData[fieldName]}"`,
+          // );
         } catch (error) {
           console.error(`Error selecting option for "${fieldName}":`, error);
           formData[fieldName] = field.options[0].value;
-          console.log(
-            `Mapped "${fieldName}" to first option (fallback): "${formData[fieldName]}"`,
-          );
+          // console.log(
+            // `Mapped "${fieldName}" to first option (fallback): "${formData[fieldName]}"`,
+          // );
         }
         continue;
       }
@@ -587,9 +587,9 @@ export async function submitWorkableApplication(
           
           if (isQAPattern) {
             if (hasQAContext) {
-              console.log(`Processing QA_* pattern field "${fieldName}" with enhanced context`);
+              // console.log(`Processing QA_* pattern field "${fieldName}" with enhanced context`);
             } else {
-              console.log(`Processing QA_* pattern field "${fieldName}" without enhanced context`);
+              // console.log(`Processing QA_* pattern field "${fieldName}" without enhanced context`);
             }
           }
           
@@ -605,16 +605,16 @@ export async function submitWorkableApplication(
           
           if (answer) {
             formData[fieldName] = answer;
-            console.log(
-              `Mapped "${fieldName}" to LLM-generated answer: "${answer.substring(0, 50)}..."`,
-            );
+            // console.log(
+              // `Mapped "${fieldName}" to LLM-generated answer: "${answer.substring(0, 50)}..."`,
+            // );
           } else {
             console.warn(
               `LLM returned no answer for "${fieldName}" (${fieldLabel})`,
             );
             formData[fieldName] =
               `I am well-suited for the ${job.jobTitle} role at ${job.company} and would be happy to discuss this further.`;
-            console.log(`Mapped "${fieldName}" to fallback answer`);
+            // console.log(`Mapped "${fieldName}" to fallback answer`);
           }
         } catch (error) {
           console.error(
@@ -623,14 +623,14 @@ export async function submitWorkableApplication(
           );
           formData[fieldName] =
             `I am well-suited for the ${job.jobTitle} role at ${job.company} and would be happy to discuss this further.`;
-          console.log(`Mapped "${fieldName}" to fallback answer (error)`);
+          // console.log(`Mapped "${fieldName}" to fallback answer (error)`);
         }
         continue;
       }
 
-      console.log(
-        `Skipping unmapped field: ${fieldName} (type: ${fieldType}, label: ${fieldLabel})`,
-      );
+      // console.log(
+        // `Skipping unmapped field: ${fieldName} (type: ${fieldType}, label: ${fieldLabel})`,
+      // );
     }
 
     // Add resume metadata for the Playwright worker
@@ -640,7 +640,7 @@ export async function submitWorkableApplication(
       formData.resumeContentType = "application/pdf";
       formData.resumeFilename = resume.filename || "resume.pdf";
       formData.isResumeBase64 = true;
-      console.log(`Added resume metadata to formData`);
+      // console.log(`Added resume metadata to formData`);
     }
 
     // Validate before submission: Ensure all required fields have values
@@ -670,7 +670,7 @@ export async function submitWorkableApplication(
       throw new Error(missingFieldsError);
     }
     
-    console.log("✅ Pre-submission validation passed: All required fields have values");
+    // console.log("✅ Pre-submission validation passed: All required fields have values");
     
     // Filter out selector fields from form data before submission
     // These are just helper fields used for targeting elements, not actual form fields
@@ -682,7 +682,7 @@ export async function submitWorkableApplication(
       return acc;
     }, {} as Record<string, any>);
     
-    console.log(`Filtered out ${Object.keys(formData).length - Object.keys(filteredFormData).length} selector metadata fields from form submission`);
+    // console.log(`Filtered out ${Object.keys(formData).length - Object.keys(filteredFormData).length} selector metadata fields from form submission`);
     
     // Prepare the payload to submit to the Playwright worker's /submit endpoint
     const payload = {
@@ -732,13 +732,13 @@ export async function submitWorkableApplication(
       }
     });
 
-    console.log(`Form data for ${job.jobTitle} at ${job.company} (truncated):`);
+    // console.log(`Form data for ${job.jobTitle} at ${job.company} (truncated):`);
     const formDataString = JSON.stringify(formDataForLogging, null, 2);
-    console.log(
-      formDataString.length > 2000
-        ? formDataString.substring(0, 2000) + "... [truncated]"
-        : formDataString,
-    );
+    // console.log(
+      // formDataString.length > 2000
+        // ? formDataString.substring(0, 2000) + "... [truncated]"
+        // : formDataString,
+    // );
 
     // Implement a more robust progression of timeouts
     const MAX_RETRIES = 3; // Reduce retries but increase timeouts  
@@ -752,7 +752,7 @@ export async function submitWorkableApplication(
       try {
         // Get the appropriate timeout for this attempt (use the last one if we're beyond the array)
         const timeoutMs = TIMEOUT_PROGRESSION[Math.min(retryCount, TIMEOUT_PROGRESSION.length - 1)];
-        console.log(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1} to submit application to Playwright worker (timeout: ${timeoutMs/1000}s)`);
+        // console.log(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1} to submit application to Playwright worker (timeout: ${timeoutMs/1000}s)`);
         
         // Use AbortController to implement timeout
         const controller = new AbortController();
@@ -780,23 +780,23 @@ export async function submitWorkableApplication(
         if (response.status === 409) {
           try {
             const conflictData = await response.json();
-            console.log(`⚠️ Job application already in progress: ${conflictData.message}`);
-            console.log(`⚠️ Existing request ID: ${conflictData.existingRequestId}, elapsed: ${Math.round(conflictData.elapsed/1000)}s`);
+            // console.log(`⚠️ Job application already in progress: ${conflictData.message}`);
+            // console.log(`⚠️ Existing request ID: ${conflictData.existingRequestId}, elapsed: ${Math.round(conflictData.elapsed/1000)}s`);
             
             // Instead of retrying immediately, wait a reasonable time and then try once more
             if (retryCount === 0) {
-              console.log(`⏳ Waiting 60 seconds before making final attempt...`);
+              // console.log(`⏳ Waiting 60 seconds before making final attempt...`);
               await new Promise(resolve => setTimeout(resolve, 60000));
               retryCount++; // Skip to final attempt
               continue;
             } else {
               // Wait longer and check actual status instead of assuming success
-              console.log(`⚠️ Job still in progress. Waiting additional time to check actual completion...`);
+              // console.log(`⚠️ Job still in progress. Waiting additional time to check actual completion...`);
               await new Promise(resolve => setTimeout(resolve, 120000)); // Wait 2 more minutes
               
               // Make a final status check to get real results
               try {
-                console.log(`Making final status check to verify actual job completion...`);
+                // console.log(`Making final status check to verify actual job completion...`);
                 const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
                   method: "GET",
                   timeout: 30000, // 30 second timeout for status checks
@@ -806,7 +806,7 @@ export async function submitWorkableApplication(
                 
                 if (statusResponse && statusResponse.ok) {
                   const status = await statusResponse.json();
-                  console.log(`Final status check result:`, JSON.stringify(status, null, 2));
+                  // console.log(`Final status check result:`, JSON.stringify(status, null, 2));
                   
                   // Check multiple success indicators
                   const isSuccessful = status && (
@@ -818,14 +818,14 @@ export async function submitWorkableApplication(
                   );
                   
                   if (isSuccessful) {
-                    console.log(`✅ Status check confirms job completed successfully`);
+                    // console.log(`✅ Status check confirms job completed successfully`);
                     return "success";
                   } else {
-                    console.log(`❌ Status check indicates job did not complete successfully`);
-                    console.log(`❌ Checked flags: lastJobSuccessful=${status.lastJobSuccessful}, lastResult=${status.lastResult}, status=${status.status}`);
+                    // console.log(`❌ Status check indicates job did not complete successfully`);
+                    // console.log(`❌ Checked flags: lastJobSuccessful=${status.lastJobSuccessful}, lastResult=${status.lastResult}, status=${status.status}`);
                   }
                 } else {
-                  console.log(`❌ Status check request failed or returned non-OK status`);
+                  // console.log(`❌ Status check request failed or returned non-OK status`);
                 }
               } catch (statusError) {
                 console.error(`Final status check failed:`, statusError);
@@ -833,7 +833,7 @@ export async function submitWorkableApplication(
               
               // Before marking as error, try one more specific check for recent job completions
               try {
-                console.log(`Making secondary verification check for job completion...`);
+                // console.log(`Making secondary verification check for job completion...`);
                 const verifyResponse = await fetch(`${completeWorkerUrl}/recent-jobs`, {
                   method: "GET",
                   timeout: 30000, // 30 second timeout for verification checks
@@ -843,7 +843,7 @@ export async function submitWorkableApplication(
                 
                 if (verifyResponse && verifyResponse.ok) {
                   const recentJobs = await verifyResponse.json();
-                  console.log(`Recent jobs check result:`, JSON.stringify(recentJobs, null, 2));
+                  // console.log(`Recent jobs check result:`, JSON.stringify(recentJobs, null, 2));
                   
                                      // Look for a recent successful job matching our URL
                    if (recentJobs && Array.isArray(recentJobs.jobs)) {
@@ -854,7 +854,7 @@ export async function submitWorkableApplication(
                      );
                      
                      if (recentSuccess) {
-                       console.log(`✅ Found recent successful job completion in recent-jobs endpoint`);
+                       // console.log(`✅ Found recent successful job completion in recent-jobs endpoint`);
                        return "success";
                      }
                    }
@@ -863,7 +863,7 @@ export async function submitWorkableApplication(
                 console.error(`Secondary verification check failed:`, verifyError);
               }
               
-              console.log(`⚠️ Cannot confirm job success after extended wait, marking as error`);
+              // console.log(`⚠️ Cannot confirm job success after extended wait, marking as error`);
               return "error"; // Only return error if we can't confirm success
             }
           } catch (parseError) {
@@ -873,7 +873,7 @@ export async function submitWorkableApplication(
         }
         
         // If we got here, the request was successful (no timeout or conflict)
-        console.log(`✅ Attempt ${retryCount + 1} succeeded! Got response with status: ${response.status}`);
+        // console.log(`✅ Attempt ${retryCount + 1} succeeded! Got response with status: ${response.status}`);
         break;
       } catch (error) {
         lastError = error;
@@ -885,11 +885,11 @@ export async function submitWorkableApplication(
         // Check if we've used all retries
         if (retryCount > MAX_RETRIES) {
           console.error(`All ${MAX_RETRIES + 1} submission attempts failed, giving up.`);
-          console.log("IMPORTANT: This may be a false negative - the application might have succeeded but the connection timed out");
+          // console.log("IMPORTANT: This may be a false negative - the application might have succeeded but the connection timed out");
           
           // When giving up, make a quick status check to see if the job was applied to
           try {
-            console.log(`Making a final lightweight status check to verify if the application completed...`);
+            // console.log(`Making a final lightweight status check to verify if the application completed...`);
             const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
               method: "GET",
               timeout: 30000, // 30 second timeout for final status checks
@@ -899,12 +899,12 @@ export async function submitWorkableApplication(
             
             if (statusResponse && statusResponse.ok) {
               const status = await statusResponse.json();
-              console.log(`Status check result:`, status);
+              // console.log(`Status check result:`, status);
               
               // If the status shows the worker is idle, job might have completed successfully
               if (status && status.idle && status.lastJobSuccessful) {
-                console.log(`⚠️ Status check indicates the worker is idle and last job was successful!`);
-                console.log(`⚠️ Application might have actually succeeded despite the timeout failure`);
+                // console.log(`⚠️ Status check indicates the worker is idle and last job was successful!`);
+                // console.log(`⚠️ Application might have actually succeeded despite the timeout failure`);
                 
                 // Return success to prevent marking the job as failed
                 return "success";
@@ -924,11 +924,11 @@ export async function submitWorkableApplication(
             (error as any).code === 'UND_ERR_HEADERS_TIMEOUT' ||
             (error as any).message?.includes('timeout')) {
           
-          console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
+          // console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
           
           // For HeadersTimeoutError specifically, immediately check if the job actually succeeded
           if ((error as any).code === 'UND_ERR_HEADERS_TIMEOUT' || (error as any).name === 'HeadersTimeoutError') {
-            console.log(`📞 HeadersTimeoutError detected - checking if job actually succeeded despite timeout...`);
+            // console.log(`📞 HeadersTimeoutError detected - checking if job actually succeeded despite timeout...`);
             try {
               // Wait a moment for the job to potentially complete
               await new Promise(resolve => setTimeout(resolve, 10000));
@@ -942,7 +942,7 @@ export async function submitWorkableApplication(
               
               if (quickStatusResponse && quickStatusResponse.ok) {
                 const quickStatus = await quickStatusResponse.json();
-                console.log(`📞 Quick status check after HeadersTimeoutError:`, JSON.stringify(quickStatus, null, 2));
+                // console.log(`📞 Quick status check after HeadersTimeoutError:`, JSON.stringify(quickStatus, null, 2));
                 
                 // Check if the job completed successfully despite the timeout
                 const wasActuallySuccessful = quickStatus && (
@@ -954,7 +954,7 @@ export async function submitWorkableApplication(
                 );
                 
                 if (wasActuallySuccessful) {
-                  console.log(`🎉 HeadersTimeoutError was a false negative - job actually succeeded!`);
+                  // console.log(`🎉 HeadersTimeoutError was a false negative - job actually succeeded!`);
                   return "success";
                 }
               }
@@ -1030,9 +1030,9 @@ export async function submitWorkableApplication(
       result = await response.json();
       
       // Add detailed logging for troubleshooting
-      console.log(`[WORKABLE-DEBUG] Raw response from Playwright worker: ${JSON.stringify(result)}`);
-      console.log(`[WORKABLE-DEBUG] Status type: ${typeof result.status}, Value: "${result.status}"`);
-      console.log(`[WORKABLE-DEBUG] Full response keys: ${Object.keys(result).join(', ')}`);
+      // console.log(`[WORKABLE-DEBUG] Raw response from Playwright worker: ${JSON.stringify(result)}`);
+      // console.log(`[WORKABLE-DEBUG] Status type: ${typeof result.status}, Value: "${result.status}"`);
+      // console.log(`[WORKABLE-DEBUG] Full response keys: ${Object.keys(result).join(', ')}`);
     } else {
       // Handle HTML or other non-JSON responses (typically 500 errors or redirects)
       const responseText = await response.text();
@@ -1050,16 +1050,16 @@ export async function submitWorkableApplication(
     // Check for field status information in the response
     if (result.fieldStats) {
       const stats = result.fieldStats;
-      console.log(`
-Form Field Processing Statistics:
---------------------------------
-Total fields: ${stats.total}
-Processed fields: ${stats.processed}
-Successfully filled: ${stats.successful}
-Failed to fill: ${stats.failed}
-Skipped fields: ${stats.skipped}
-Success rate: ${stats.successRate}%
-      `);
+      // console.log(`
+// Form Field Processing Statistics:
+// --------------------------------
+// Total fields: ${stats.total}
+// Processed fields: ${stats.processed}
+// Successfully filled: ${stats.successful}
+// Failed to fill: ${stats.failed}
+// Skipped fields: ${stats.skipped}
+// Success rate: ${stats.successRate}%
+      // `);
       
       // Log details of any failed fields for debugging and improvement
       if (result.fieldDetails && stats.failed > 0) {
@@ -1075,13 +1075,13 @@ ${failedFields.map((field: any) =>
     }
     
     // Add detailed logging to investigate the status comparison
-    console.log(`[WORKABLE-DEBUG] Comparing status: "${result.status}" (${typeof result.status})`);
-    console.log(`[WORKABLE-DEBUG] Status strict equality check: result.status === "success" = ${result.status === "success"}`);
-    console.log(`[WORKABLE-DEBUG] Status string check: result.status.toString() === "success" = ${result.status.toString() === "success"}`);
-    console.log(`[WORKABLE-DEBUG] Status trim check: result.status.trim() === "success" = ${result.status.trim ? result.status.trim() === "success" : "N/A"}`);
+    // console.log(`[WORKABLE-DEBUG] Comparing status: "${result.status}" (${typeof result.status})`);
+    // console.log(`[WORKABLE-DEBUG] Status strict equality check: result.status === "success" = ${result.status === "success"}`);
+    // console.log(`[WORKABLE-DEBUG] Status string check: result.status.toString() === "success" = ${result.status.toString() === "success"}`);
+    // console.log(`[WORKABLE-DEBUG] Status trim check: result.status.trim() === "success" = ${result.status.trim ? result.status.trim() === "success" : "N/A"}`);
     
     // Check for additional success indicators
-    console.log(`[WORKABLE-DEBUG] Additional success flags present: success_flag=${!!result.success_flag}, result=${result.result}`);
+    // console.log(`[WORKABLE-DEBUG] Additional success flags present: success_flag=${!!result.success_flag}, result=${result.result}`);
     
     // Modified condition to check multiple success indicators
     const isSuccessfulApplication = (
@@ -1094,21 +1094,21 @@ ${failedFields.map((field: any) =>
     );
     
     if (isSuccessfulApplication) {
-      console.log(
-        `✅ Application successfully submitted for ${job.jobTitle} at ${job.company}`,
-      );
-      console.log(`[WORKABLE-DEBUG] Returning 'success' to auto-apply-service`);
+      // console.log(
+        // `✅ Application successfully submitted for ${job.jobTitle} at ${job.company}`,
+      // );
+      // console.log(`[WORKABLE-DEBUG] Returning 'success' to auto-apply-service`);
       return "success";
     } else if (result.status === "skipped") {
-      console.log(
-        `⏭️ Application skipped: ${result.message || "No reason provided"}`,
-      );
-      console.log(`[WORKABLE-DEBUG] Returning 'skipped' to auto-apply-service`);
+      // console.log(
+        // `⏭️ Application skipped: ${result.message || "No reason provided"}`,
+      // );
+      // console.log(`[WORKABLE-DEBUG] Returning 'skipped' to auto-apply-service`);
       return "skipped";
     } else {
       console.error(`❌ Unexpected result status: ${result.status}`);
       console.error(`❌ Full result object: ${JSON.stringify(result, null, 2)}`);
-      console.log(`[WORKABLE-DEBUG] Returning 'error' to auto-apply-service`);
+      // console.log(`[WORKABLE-DEBUG] Returning 'error' to auto-apply-service`);
       return "error";
     }
   } catch (error) {
@@ -1126,7 +1126,7 @@ ${failedFields.map((field: any) =>
   }
   
   // Log end of process marker for easier log parsing
-  console.log(`📊 Application process for ${job.jobTitle} at ${job.company} completed.`);
+  // console.log(`📊 Application process for ${job.jobTitle} at ${job.company} completed.`);
 }
 
 /**

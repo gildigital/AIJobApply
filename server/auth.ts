@@ -33,7 +33,7 @@ export function setupAuth(app: Express) {
   if (!process.env.SESSION_SECRET) {
     // For development, use a random string
     process.env.SESSION_SECRET = randomBytes(32).toString("hex");
-    console.log("Generated random SESSION_SECRET for development");
+    // console.log("Generated random SESSION_SECRET for development");
   }
 
   const sessionSettings = {

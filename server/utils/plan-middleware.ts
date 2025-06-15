@@ -32,7 +32,7 @@ export function attachPlanInfo(req: Request, res: Response, next: NextFunction) 
     req.userPlan = userPlan;
     req.planFeatures = planFeatures;
     
-    console.log(`🎫 User plan attached: ${userPlan} with features:`, planFeatures?.ai_models);
+    // console.log(`🎫 User plan attached: ${userPlan} with features:`, planFeatures?.ai_models);
   }
   
   next();

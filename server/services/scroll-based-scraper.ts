@@ -63,7 +63,7 @@ export class ScrollBasedScraper {
    * Log information about problematic URLs for analysis
    */
   logProblemUrl(url: string, type: string, details: any) {
-    console.log(`[PROBLEM URL] ${type}: ${url}`, details);
+    // console.log(`[PROBLEM URL] ${type}: ${url}`, details);
   }
 
   /**
@@ -112,14 +112,14 @@ export class ScrollBasedScraper {
           correctedUrl = urlObj.toString();
           const currentPage = parseInt(urlObj.searchParams.get('page') || '1', 10);
   
-          console.log(`Fetching job listings from: ${correctedUrl} (page ${currentPage}, attempt ${attempt + 1})`);
+          // console.log(`Fetching job listings from: ${correctedUrl} (page ${currentPage}, attempt ${attempt + 1})`);
   
           const workerUrl =
             process.env.VITE_PLAYWRIGHT_WORKER_URL || 'https://aijobapply-worker-production.up.railway.app';
           const completeWorkerUrl = workerUrl.startsWith('http')
             ? workerUrl
             : `https://${workerUrl}`;
-          console.log(`Using Playwright worker URL: ${completeWorkerUrl}`);
+          // console.log(`Using Playwright worker URL: ${completeWorkerUrl}`);
   
           try {
             new URL(`${completeWorkerUrl}/scrape`);
@@ -135,7 +135,7 @@ export class ScrollBasedScraper {
             selector: '[data-ui="job-item"] a[href*="/view/"]',
           };
   
-          console.log(`Requesting Playwright worker to scroll ${correctedUrl}`);
+          // console.log(`Requesting Playwright worker to scroll ${correctedUrl}`);
   
           try {
             // Using fetch with manual SSE parsing since EventSource doesn't support POST
@@ -175,12 +175,12 @@ export class ScrollBasedScraper {
                   try {
                     const data = JSON.parse(line.slice(6));
                     if (data.status === 'links' && Array.isArray(data.links)) {
-                      console.log(`Received ${data.links.length} links from SSE stream`);
+                      // console.log(`Received ${data.links.length} links from SSE stream`);
                       const newLinks = data.links.filter((link: string) => !jobLinks.includes(link));
                       jobLinks.push(...newLinks);
-                      console.log(`Added ${newLinks.length} new unique links, total: ${jobLinks.length}`);
+                      // console.log(`Added ${newLinks.length} new unique links, total: ${jobLinks.length}`);
                     } else if (data.status === 'complete') {
-                      console.log(`SSE streaming complete, received ${jobLinks.length} total links`);
+                      // console.log(`SSE streaming complete, received ${jobLinks.length} total links`);
                       processingComplete = true;
                       break;
                     } else if (data.status === 'error') {
@@ -197,7 +197,7 @@ export class ScrollBasedScraper {
             // Process the collected links - store them instead of fetching details
             const uniqueLinks = Array.from(new Set(jobLinks));
             const totalJobsOnPage = uniqueLinks.length;
-            console.log(`Found ${totalJobsOnPage} unique job links for query "${query}" via SSE streaming`);
+            // console.log(`Found ${totalJobsOnPage} unique job links for query "${query}" via SSE streaming`);
   
             let newLinks = state
               ? uniqueLinks.filter((link) => {
@@ -207,7 +207,7 @@ export class ScrollBasedScraper {
               : uniqueLinks;
             const newJobsFound = newLinks.length;
 
-            console.log(`Found ${newJobsFound} new job links - will store them for processing`);
+            // console.log(`Found ${newJobsFound} new job links - will store them for processing`);
             
             // Store job links in database instead of processing them immediately
             if (newJobsFound > 0 && state?.userId) {
@@ -222,7 +222,7 @@ export class ScrollBasedScraper {
 
               try {
                 const storedLinks = await storage.addJobLinks(jobLinksToStore);
-                console.log(`Stored ${storedLinks.length} job links in database`);
+                // console.log(`Stored ${storedLinks.length} job links in database`);
                 
                 // Add to state for tracking
                 if (state) {
@@ -261,13 +261,13 @@ export class ScrollBasedScraper {
               state[`processed_${query}`] = true;
   
               if (jobListings.length === 0) {
-                console.log(`No new jobs for query "${query}". Stopping scroll.`);
+                // console.log(`No new jobs for query "${query}". Stopping scroll.`);
               } else if (newJobsFound > 0) {
-                console.log(`Found ${newJobsFound} new jobs through scrolling, no pagination needed.`);
+                // console.log(`Found ${newJobsFound} new jobs through scrolling, no pagination needed.`);
               }
             }
 
-            console.log(`Found ${jobListings.length} jobs from ${correctedUrl}, added ${jobListings.length} to results`);
+            // console.log(`Found ${jobListings.length} jobs from ${correctedUrl}, added ${jobListings.length} to results`);
             return jobListings;
           } catch (innerError: any) {
             // If the streaming approach fails, we'll just retry

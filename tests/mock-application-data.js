@@ -29,7 +29,7 @@ const errorTypes = [
 
 // Add mock data to the workableScraper
 function mockApplicationData() {
-  console.log('Adding mock application data...');
+  // console.log('Adding mock application data...');
   
   // Mock successful data
   successfulUrls.forEach((url, index) => {
@@ -38,7 +38,7 @@ function mockApplicationData() {
       testEntry: true,
       mockIndex: index
     });
-    console.log(`Added successful URL: ${url} with ${fieldsCount} fields`);
+    // console.log(`Added successful URL: ${url} with ${fieldsCount} fields`);
   });
   
   // Mock problem data
@@ -52,15 +52,15 @@ function mockApplicationData() {
     };
     
     workableScraper.logProblemUrl(url, errorType, errorDetails);
-    console.log(`Added problematic URL: ${url} with error type: ${errorType}`);
+    // console.log(`Added problematic URL: ${url} with error type: ${errorType}`);
   });
   
-  console.log('Mock data added successfully');
+  // console.log('Mock data added successfully');
   
   // Get and display statistics
   const stats = workableScraper.getApplicationStatistics();
-  console.log('Application Statistics:');
-  console.log(JSON.stringify(stats, null, 2));
+  // console.log('Application Statistics:');
+  // console.log(JSON.stringify(stats, null, 2));
 }
 
 // Execute the function

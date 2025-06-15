@@ -4,21 +4,21 @@ import { db } from '../db.js';
 
 export async function runMigration() {
   try {
-    console.log('Starting migration to add new job preferences columns...');
+    // console.log('Starting migration to add new job preferences columns...');
     
     // Add workplaceOfInterest column (array type)
     await db.execute(sql`
       ALTER TABLE user_profiles 
       ADD COLUMN IF NOT EXISTS workplace_of_interest TEXT[] DEFAULT '{}';
     `);
-    console.log('Added workplace_of_interest column');
+    // console.log('Added workplace_of_interest column');
     
     // Add jobExperienceLevel column (array type)
     await db.execute(sql`
       ALTER TABLE user_profiles 
       ADD COLUMN IF NOT EXISTS job_experience_level TEXT[] DEFAULT '{}';
     `);
-    console.log('Added job_experience_level column');
+    // console.log('Added job_experience_level column');
     
     // Convert preferredWorkArrangement from string to array (keeping existing data)
     await db.execute(sql`
@@ -39,9 +39,9 @@ export async function runMigration() {
       ALTER TABLE user_profiles 
       RENAME COLUMN preferred_work_arrangement_temp TO preferred_work_arrangement;
     `);
-    console.log('Converted preferred_work_arrangement to array type');
+    // console.log('Converted preferred_work_arrangement to array type');
     
-    console.log('Migration completed successfully');
+    // console.log('Migration completed successfully');
   } catch (error) {
     console.error('Migration failed:', error);
     throw error;

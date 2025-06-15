@@ -5,7 +5,7 @@ import { db } from "../db.js";
  */
 export async function runMigration() {
   try {
-    console.log("Adding 'standby' status to job_queue status enum...");
+    // console.log("Adding 'standby' status to job_queue status enum...");
     
     // Add the standby status type to the enum
     await db.execute(`
@@ -14,13 +14,13 @@ export async function runMigration() {
     `);
     
     // Add the updatedAt column if it doesn't exist
-    console.log("Adding 'updated_at' column to job_queue table...");
+    // console.log("Adding 'updated_at' column to job_queue table...");
     await db.execute(`
       ALTER TABLE job_queue
       ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
     `);
     
-    console.log("Migration completed successfully");
+    // console.log("Migration completed successfully");
     return { success: true, message: "Added standby status and updated_at column to job_queue table" };
   } catch (error) {
     console.error("Migration failed:", error);

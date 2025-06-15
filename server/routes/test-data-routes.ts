@@ -41,7 +41,7 @@ export function registerTestDataRoutes(app: Express) {
         await storage.updateUser(userId, { isAutoApplyEnabled: false });
       }
       
-      console.log(`Test data cleared for user ${userId}: ${deletedJobs.length} jobs, ${deletedLogs.length} logs`);
+      // console.log(`Test data cleared for user ${userId}: ${deletedJobs.length} jobs, ${deletedLogs.length} logs`);
       
       res.status(200).json({
         message: 'Test data cleared successfully',

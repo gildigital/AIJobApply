@@ -159,7 +159,7 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
       batches.push(jobs.slice(i, i + BATCH_SIZE));
     }
 
-    console.log(`Processing ${jobs.length} jobs in ${batches.length} batches of ${BATCH_SIZE}`);
+    // console.log(`Processing ${jobs.length} jobs in ${batches.length} batches of ${BATCH_SIZE}`);
 
     // Process each batch sequentially, but jobs within each batch concurrently
     for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -176,7 +176,7 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
         //   status: "Completed",
         //   message: `Daily limit reached before batch ${batchIndex + 1}. Stopping processing.`
         // });
-        console.log(`Daily limit reached before batch ${batchIndex + 1}. Stopping processing.`);
+        // console.log(`Daily limit reached before batch ${batchIndex + 1}. Stopping processing.`);
         break;
       }
       
@@ -205,7 +205,7 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
 
       applicationsSubmitted += batchApplicationsSubmitted;
       
-      console.log(`Batch ${batchIndex + 1} completed: ${batchApplicationsSubmitted} applications submitted (total: ${applicationsSubmitted})`);
+      // console.log(`Batch ${batchIndex + 1} completed: ${batchApplicationsSubmitted} applications submitted (total: ${applicationsSubmitted})`);
 
       // Check if we've reached the limit after this batch
       const newRemainingApplications = await getRemainingApplications(userId);
@@ -221,7 +221,7 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
 
       // Add a delay between batches to avoid overwhelming the system
       if (batchIndex < batches.length - 1) {
-        console.log(`Waiting 5 seconds before processing next batch...`);
+        // console.log(`Waiting 5 seconds before processing next batch...`);
         await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
@@ -273,7 +273,7 @@ async function processJobInBatch(
       //   status: "Stopped",
       //   message: `Auto-apply stopped: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`
       // });
-      console.log(`Auto-apply stopped for user ${userId}: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`);
+      // console.log(`Auto-apply stopped for user ${userId}: isAutoApplyEnabled is false in DB before processing job at ${job.company} - ${job.jobTitle}`);
       return { applicationSubmitted: false };
     }
 
@@ -282,7 +282,7 @@ async function processJobInBatch(
     const remainingApplications = await getRemainingApplications(userId);
     
     if (remainingApplications <= 0) {
-      console.log(`Daily limit reached for user ${userId} before processing ${job.company} - ${job.jobTitle}`);
+      // console.log(`Daily limit reached for user ${userId} before processing ${job.company} - ${job.jobTitle}`);
       return { applicationSubmitted: false };
     }
 
@@ -306,7 +306,7 @@ async function processJobInBatch(
         const VITE_BACKEND_URL = process.env.VITE_BACKEND_URL || "http://localhost:5000";
         const apiUrl = `${VITE_BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(job.applyUrl)}`;
 
-        console.log(`Fetching Workable job from URL: ${job.applyUrl}`);
+        // console.log(`Fetching Workable job from URL: ${job.applyUrl}`);
         const response = await fetch(apiUrl);
 
         if (!response.ok) {
@@ -314,7 +314,7 @@ async function processJobInBatch(
 
           if (response.status === 429) {
             // Throttled by our throttling system - handle specially
-            console.log(`🐌 Job description fetching throttled for ${job.applyUrl}`);
+            // console.log(`🐌 Job description fetching throttled for ${job.applyUrl}`);
             
             try {
               const throttleData = await response.json();
@@ -322,7 +322,7 @@ async function processJobInBatch(
               const isThrottled = throttleData.isThrottled || false;
               
               if (isThrottled) {
-                console.log(`🐌 Playwright worker throttling detected - skipping job and will retry later`);
+                // console.log(`🐌 Playwright worker throttling detected - skipping job and will retry later`);
                 
                 // Mark job as throttled (not failed) so it can be retried
                 await storage.updateJobLink(job._jobLinkId, {
@@ -342,7 +342,7 @@ async function processJobInBatch(
                 return { applicationSubmitted: false };
               }
             } catch (parseError) {
-              console.log(`🐌 Could not parse 429 response, treating as regular rate limit`);
+              // console.log(`🐌 Could not parse 429 response, treating as regular rate limit`);
             }
             
             // Regular rate limiting - mark as failed
@@ -361,7 +361,7 @@ async function processJobInBatch(
             return { applicationSubmitted: false };
           } else if (response.status === 410) {
             // Job is Gone (410) - demote priority
-            console.log(`Job is Gone (410). Demoting priority for URL: ${job.applyUrl}`);
+            // console.log(`Job is Gone (410). Demoting priority for URL: ${job.applyUrl}`);
 
             // Extract the external ID from the URL
             const externalJobId = getExternalIdFromWorkableUrl(job.applyUrl);
@@ -369,12 +369,12 @@ async function processJobInBatch(
             if (externalJobId) {
               try {
                 // Demote the job priority
-                console.log(`Attempting to demote job with external_id: ${externalJobId}`);
+                // console.log(`Attempting to demote job with external_id: ${externalJobId}`);
                 const updateRes = await pool.query(
                   'UPDATE job_links SET priority = 0 WHERE external_job_id = $1',
                   [externalJobId]
                 );
-                console.log(`Demoted ${updateRes.rowCount} job(s) with external_id: ${externalJobId}`);
+                // console.log(`Demoted ${updateRes.rowCount} job(s) with external_id: ${externalJobId}`);
               } catch (dbError) {
                 console.error(`Failed to demote job with external_id ${externalJobId} in the database.`, dbError);
               }
@@ -427,7 +427,7 @@ async function processJobInBatch(
           // Mark job link as processed
           await storage.markJobLinkAsProcessed(job._jobLinkId);
 
-          console.log(`Successfully fetched job details: ${job.jobTitle} at ${job.company}`);
+          // console.log(`Successfully fetched job details: ${job.jobTitle} at ${job.company}`);
 
           // Add a delay after fetching job details to avoid overwhelming the website
           await new Promise(resolve => setTimeout(resolve, 10000));
@@ -494,7 +494,7 @@ async function processJobInBatch(
     try {
       const { scoreJobFit: aiScoreJobFit } = await import('./job-matching-service.js');
       matchResult = await aiScoreJobFit(user.id, job);
-      console.log(`AI score for ${job.jobTitle}: ${matchResult.matchScore}% - Reasons: ${matchResult.reasons.join(', ')}`);
+      // console.log(`AI score for ${job.jobTitle}: ${matchResult.matchScore}% - Reasons: ${matchResult.reasons.join(', ')}`);
     } catch (error) {
       console.error("Error with AI job scoring, falling back to basic scoring:", error);
       const fallbackScore = await scoreJobFit(user, job);
@@ -530,7 +530,7 @@ async function processJobInBatch(
           let status = "Applied";
           let applicationStatus = "applied";
           message = `Successfully applied to ${job.company} - ${job.jobTitle}`;
-          console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
+          // console.log(`[AUTO-APPLY-DEBUG] Setting status to "${status}", applicationStatus to "${applicationStatus}"`);
 
           // Add to job tracker with the match score and application status
           jobRecord = await addJobToTracker(
@@ -546,14 +546,14 @@ async function processJobInBatch(
           // Consider implementing a separate statistics/analytics system for:
           // - Skipped applications (result === "skipped")
           // - Failed applications (result === "error")
-          console.log(`[AUTO-APPLY-DEBUG] Job ${result} - not adding to job_tracker table`);
+          // console.log(`[AUTO-APPLY-DEBUG] Job ${result} - not adding to job_tracker table`);
           message = result === "skipped" 
             ? `Skipped ${job.company} - ${job.jobTitle} due to unsupported application process`
             : `Failed to apply to ${job.company} - ${job.jobTitle}`;
         }
 
         // Add detailed logging before creating the log
-        console.log(`[AUTO-APPLY-DEBUG] Creating log entry with status: ${result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed")}`);
+        // console.log(`[AUTO-APPLY-DEBUG] Creating log entry with status: ${result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed")}`);
 
         // Log the application attempt - keep only "Applied" status
         if (result === "success" && jobRecord) {
@@ -573,7 +573,7 @@ async function processJobInBatch(
           // });
         }
 
-        console.log(`[AUTO-APPLY-DEBUG] Log entry created with message: ${message}`);
+        // console.log(`[AUTO-APPLY-DEBUG] Log entry created with message: ${message}`);
 
         // Add a small delay between applications to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -603,7 +603,7 @@ async function processJobInBatch(
       // - Jobs that don't meet match score threshold
       // - User match preferences and thresholds
       // - Job quality metrics for improving matching
-      console.log(`Skipping job ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}, Threshold: ${matchScoreThreshold})`);
+      // console.log(`Skipping job ${job.company} - ${job.jobTitle} (Score: ${matchResult.matchScore}, Threshold: ${matchScoreThreshold})`);
       
       // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
       // await createAutoApplyLog({
@@ -640,33 +640,33 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
     // Get the user profile to access preferences
     const profile = await storage.getUserProfile(userId);
     if (!profile) {
-      console.log(`No profile found for user ${userId}, using default preferences`);
+      // console.log(`No profile found for user ${userId}, using default preferences`);
     }
 
     // Log profile data for debugging
-    console.log(`User ${userId} profile preferences:`, {
-      jobTitles: profile?.jobTitlesOfInterest || [],
-      locations: profile?.locationsOfInterest || [],
-      remotePreference: profile?.preferredWorkArrangement,
-      excludedCompanies: profile?.excludedCompanies || []
-    });
+    // console.log(`User ${userId} profile preferences:`, {
+      // jobTitles: profile?.jobTitlesOfInterest || [],
+      // locations: profile?.locationsOfInterest || [],
+      // remotePreference: profile?.preferredWorkArrangement,
+      // excludedCompanies: profile?.excludedCompanies || []
+    // });
 
     // First, check if we have pending job links to process
     const pendingJobLinksCount = await storage.getPendingJobLinksCount(userId);
-    console.log(`Found ${pendingJobLinksCount} pending job links for user ${userId}`);
+    // console.log(`Found ${pendingJobLinksCount} pending job links for user ${userId}`);
 
     if (pendingJobLinksCount === 0) {
       // No pending links, scrape for new ones
-      console.log(`No pending job links found, scraping for new jobs for user ${userId}...`);
+      // console.log(`No pending job links found, scraping for new jobs for user ${userId}...`);
       const workableJobs = await getWorkableJobsForUser(userId);
-      console.log(`Scraping completed, found ${workableJobs.length} job placeholders from Workable`);
+      // console.log(`Scraping completed, found ${workableJobs.length} job placeholders from Workable`);
 
       // Check again for pending links after scraping
       const newPendingCount = await storage.getPendingJobLinksCount(userId);
-      console.log(`After scraping, found ${newPendingCount} pending job links`);
+      // console.log(`After scraping, found ${newPendingCount} pending job links`);
 
       if (newPendingCount === 0) {
-        console.log("No new job links found after scraping");
+        // console.log("No new job links found after scraping");
         return [];
       }
     }
@@ -674,7 +674,7 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
     // Now process job links one at a time
     // Get multiple pending links since we'll process them one by one in processAutoApply
     const pendingLinks = await storage.getNextJobLinksToProcess(userId, 50); // Get up to 50 links to process
-    console.log(`Retrieved ${pendingLinks.length} job links for processing`);
+    // console.log(`Retrieved ${pendingLinks.length} job links for processing`);
 
     if (pendingLinks.length === 0) {
       return [];
@@ -700,7 +700,7 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
     console.error("Error getting job listings:", error);
 
     // Return an empty array rather than using mock data
-    console.log("Error occurred, no jobs will be processed");
+    // console.log("Error occurred, no jobs will be processed");
     return [];
   }
 }
@@ -763,7 +763,7 @@ async function checkForExistingApplication(userId: number, job: JobListing): Pro
   const isAlreadyApplied = !!existingJob;
 
   if (isAlreadyApplied) {
-    console.log(`Found existing application for ${job.company} - ${job.jobTitle} with status ${existingJob.applicationStatus}`);
+    // console.log(`Found existing application for ${job.company} - ${job.jobTitle} with status ${existingJob.applicationStatus}`);
   }
 
   return isAlreadyApplied;
@@ -778,10 +778,10 @@ export async function scoreJobFit(user: any, job: JobListing): Promise<number> {
     // Use the AI-powered job scoring system for more accurate results
     const { scoreJobFit: aiScoreJobFit } = await import('./job-matching-service.js');
 
-    console.log(`Using AI-powered scoring for ${job.jobTitle} at ${job.company}`);
+    // console.log(`Using AI-powered scoring for ${job.jobTitle} at ${job.company}`);
     const matchResult = await aiScoreJobFit(user.id, job);
 
-    console.log(`AI score for ${job.jobTitle}: ${matchResult.matchScore}% - Reasons: ${matchResult.reasons.join(', ')}`);
+    // console.log(`AI score for ${job.jobTitle}: ${matchResult.matchScore}% - Reasons: ${matchResult.reasons.join(', ')}`);
     return matchResult.matchScore;
   } catch (error) {
     console.error("Error with AI job scoring, falling back to keyword matching:", error);
@@ -792,7 +792,7 @@ export async function scoreJobFit(user: any, job: JobListing): Promise<number> {
       const resume = await storage.getResume(user.id);
       if (!resume || !resume.parsedText) {
         // Without resume data, we return a low score to encourage resume upload
-        console.log("No resume found, returning low score to encourage resume upload");
+        // console.log("No resume found, returning low score to encourage resume upload");
         return 25;
       }
 
@@ -802,13 +802,13 @@ export async function scoreJobFit(user: any, job: JobListing): Promise<number> {
 
       // Calculate the match score using improved algorithm
       const score = calculateMatchScore(resumeKeywords, jobKeywords, job.description, job.jobTitle);
-      console.log(`Fallback keyword score for ${job.jobTitle}: ${score}%`);
+      // console.log(`Fallback keyword score for ${job.jobTitle}: ${score}%`);
       return score;
     } catch (fallbackError) {
       console.error("Error in fallback scoring algorithm:", fallbackError);
 
       // Last resort: return a low score
-      console.log("All scoring methods failed, returning minimal score");
+      // console.log("All scoring methods failed, returning minimal score");
       return 15;
     }
   }
@@ -851,19 +851,19 @@ function calculateMatchScore(
 ): number {
   // If we have no keywords from either source, return a low score
   if (resumeKeywords.length === 0 && jobKeywords.length === 0) {
-    console.log("No keywords found in resume or job description");
+    // console.log("No keywords found in resume or job description");
     return 20;
   }
 
   // If we have no resume keywords, return a very low score
   if (resumeKeywords.length === 0) {
-    console.log("No keywords found in resume");
+    // console.log("No keywords found in resume");
     return 15;
   }
 
   // If we have no job keywords, we can't properly score but give a moderate score
   if (jobKeywords.length === 0) {
-    console.log("No keywords found in job description, using moderate score");
+    // console.log("No keywords found in job description, using moderate score");
     return 40;
   }
 
@@ -912,7 +912,7 @@ function calculateMatchScore(
   }
 
   // Log the scoring breakdown for debugging
-  console.log(`Scoring breakdown: Base match: ${Math.round(matchPercentage * 0.6)}, Title match: ${resumeSkillsInTitle.length > 0 ? Math.min(25, resumeSkillsInTitle.length * 8) : 0}, Keywords: ${matchingKeywords.length}/${uniqueJobKeywords.length}`);
+  // console.log(`Scoring breakdown: Base match: ${Math.round(matchPercentage * 0.6)}, Title match: ${resumeSkillsInTitle.length > 0 ? Math.min(25, resumeSkillsInTitle.length * 8) : 0}, Keywords: ${matchingKeywords.length}/${uniqueJobKeywords.length}`);
 
   // Ensure score stays between 0-100
   return Math.min(100, Math.max(0, score));
@@ -926,21 +926,21 @@ function calculateMatchScore(
  */
 export async function submitApplication(user: any, job: JobListing): Promise<"success" | "skipped" | "error"> {
   try {
-    console.log(`Attempting to submit application for ${job.jobTitle} at ${job.company} from source: ${job.source || 'unknown'}`);
+    // console.log(`Attempting to submit application for ${job.jobTitle} at ${job.company} from source: ${job.source || 'unknown'}`);
 
     // Skip jobs without a source or apply URL
     if (!job.source || !job.applyUrl) {
-      console.log("Missing source or apply URL, skipping application");
+      // console.log("Missing source or apply URL, skipping application");
       return "skipped";
     }
 
     // For Workable jobs, validate the URL format
     if (job.source === 'workable') {
       if (!workableScraper.isValidWorkableApplicationUrl(job.applyUrl)) {
-        console.log(`Invalid Workable application URL: ${job.applyUrl}`);
+        // console.log(`Invalid Workable application URL: ${job.applyUrl}`);
         return "skipped";
       }
-      console.log(`Valid Workable application URL confirmed: ${job.applyUrl}`);
+      // console.log(`Valid Workable application URL confirmed: ${job.applyUrl}`);
     }
 
     // Get the user's resume to send with the application
@@ -964,7 +964,7 @@ export async function submitApplication(user: any, job: JobListing): Promise<"su
 
     // For Workable jobs, use the schema-driven approach with introspection
     if (job.source === 'workable') {
-      console.log("Using schema-driven approach for Workable job application");
+      // console.log("Using schema-driven approach for Workable job application");
       const { submitWorkableApplication } = await import('./workable-application.js');
       return await submitWorkableApplication(user, resume, profile, job, matchScore);
     }
@@ -1001,7 +1001,7 @@ async function submitApplicationToPlaywright(
   }
 
   try {
-    console.log(`Sending application to Playwright worker for ${job.jobTitle} at ${job.company}`);
+    // console.log(`Sending application to Playwright worker for ${job.jobTitle} at ${job.company}`);
 
     // Prepare the payload to send to the Playwright worker
     const payload = {
@@ -1052,7 +1052,7 @@ async function submitApplicationToPlaywright(
       : `https://${workerUrl}`;
 
     // Make the API request to the Playwright worker
-    console.log(`POST ${completeWorkerUrl}/submit`);
+    // console.log(`POST ${completeWorkerUrl}/submit`);
 
     // Create a sanitized payload for logging
     const payloadForLogging = { ...payload };
@@ -1075,9 +1075,9 @@ async function submitApplicationToPlaywright(
     }
 
     // Log sanitized payload for debugging
-    console.log(`Payload prepared for ${job.company} - ${job.jobTitle}:`,
-      JSON.stringify(payloadForLogging, null, 2).substring(0, 1000) +
-      (JSON.stringify(payloadForLogging, null, 2).length > 1000 ? "... [truncated]" : ""));
+    // console.log(`Payload prepared for ${job.company} - ${job.jobTitle}:`,
+      // JSON.stringify(payloadForLogging, null, 2).substring(0, 1000) +
+      // (JSON.stringify(payloadForLogging, null, 2).length > 1000 ? "... [truncated]" : ""));
 
     // Implement a more robust progression of timeouts
     const MAX_RETRIES = 4; // Increase max retries
@@ -1091,7 +1091,7 @@ async function submitApplicationToPlaywright(
       try {
         // Get the appropriate timeout for this attempt (use the last one if we're beyond the array)
         const timeoutMs = TIMEOUT_PROGRESSION[Math.min(retryCount, TIMEOUT_PROGRESSION.length - 1)];
-        console.log(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1} to submit application to Playwright worker (timeout: ${timeoutMs / 1000}s)`);
+        // console.log(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1} to submit application to Playwright worker (timeout: ${timeoutMs / 1000}s)`);
 
         // Use AbortController to implement timeout
         const controller = new AbortController();
@@ -1111,7 +1111,7 @@ async function submitApplicationToPlaywright(
         clearTimeout(timeoutId);
 
         // If we got here, the request was successful (no timeout)
-        console.log(`✅ Attempt ${retryCount + 1} succeeded! Got response with status: ${response.status}`);
+        // console.log(`✅ Attempt ${retryCount + 1} succeeded! Got response with status: ${response.status}`);
         break;
       } catch (error) {
         lastError = error;
@@ -1123,23 +1123,23 @@ async function submitApplicationToPlaywright(
         // Check if we've used all retries
         if (retryCount > MAX_RETRIES) {
           console.error(`All ${MAX_RETRIES + 1} submission attempts failed, giving up.`);
-          console.log("IMPORTANT: This may be a false negative - the application might have succeeded but the connection timed out");
+          // console.log("IMPORTANT: This may be a false negative - the application might have succeeded but the connection timed out");
 
           // When giving up, make a quick status check to see if the job was applied to
           try {
-            console.log(`Making a final lightweight status check to verify if the application completed...`);
+            // console.log(`Making a final lightweight status check to verify if the application completed...`);
             const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
               method: "GET",
             }).catch(e => null);
 
             if (statusResponse && statusResponse.ok) {
               const status = await statusResponse.json();
-              console.log(`Status check result:`, status);
+              // console.log(`Status check result:`, status);
 
               // If the status shows the worker is idle, job might have completed successfully
               if (status && status.idle && status.lastJobSuccessful) {
-                console.log(`⚠️ Status check indicates the worker is idle and last job was successful!`);
-                console.log(`⚠️ Application might have actually succeeded despite the timeout failure`);
+                // console.log(`⚠️ Status check indicates the worker is idle and last job was successful!`);
+                // console.log(`⚠️ Application might have actually succeeded despite the timeout failure`);
 
                 // Return success to prevent marking the job as failed
                 return "success";
@@ -1158,7 +1158,7 @@ async function submitApplicationToPlaywright(
           (error as any).name === 'HeadersTimeoutError' ||
           (error as any).code === 'UND_ERR_HEADERS_TIMEOUT' ||
           (error as any).message?.includes('timeout')) {
-          console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
+          // console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
           // Wait 5 seconds before retrying
           await new Promise(resolve => setTimeout(resolve, 5000));
         } else {
@@ -1189,7 +1189,7 @@ async function submitApplicationToPlaywright(
         // Special case: If the worker returns a 400 status but with a "skipped" status in the JSON
         // This means it's intentionally skipping the job (e.g., not an Adzuna Easy Apply job)
         if (responseJson.status === "skipped") {
-          console.log(`Job intentionally skipped by the worker: ${responseJson.message || "No reason provided"}`);
+          // console.log(`Job intentionally skipped by the worker: ${responseJson.message || "No reason provided"}`);
           return "skipped";
         }
       } catch (jsonError) {
@@ -1221,13 +1221,13 @@ async function submitApplicationToPlaywright(
     // If we get here, the response was successful (200 OK)
     try {
       const result = await response.json();
-      console.log("Playwright worker response:", result);
+      // console.log("Playwright worker response:", result);
 
       if (result.status === "success") {
-        console.log(`Application successfully submitted via Playwright worker`);
+        // console.log(`Application successfully submitted via Playwright worker`);
         return "success";
       } else if (result.status === "skipped") {
-        console.log(`Application skipped by Playwright worker: ${result.error || "No reason provided"}`);
+        // console.log(`Application skipped by Playwright worker: ${result.error || "No reason provided"}`);
         return "skipped";
       } else {
         const errorDetails = result.error || result.message || "Unknown error";

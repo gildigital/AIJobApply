@@ -20,10 +20,10 @@ const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
 if (!hasOpenAIKey && !hasAnthropicKey) {
   console.warn("WARNING: No AI service API keys found (OPENAI_API_KEY or ANTHROPIC_API_KEY). Job matching will use fallback scoring.");
 } else {
-  console.log("AI scoring service available with:", 
-    hasOpenAIKey ? "OpenAI" : "", 
-    hasAnthropicKey ? (hasOpenAIKey ? " and Anthropic" : "Anthropic") : ""
-  );
+  // console.log("AI scoring service available with:", 
+    // hasOpenAIKey ? "OpenAI" : "", 
+    // hasAnthropicKey ? (hasOpenAIKey ? " and Anthropic" : "Anthropic") : ""
+  // );
 }
 
 /**
@@ -37,14 +37,14 @@ export async function matchResumeToJob(resumeText: string, jobDescription: strin
   // Try OpenAI first if key is available
   if (OPENAI_API_KEY) {
     try {
-      console.log("Using OpenAI for job matching");
+      // console.log("Using OpenAI for job matching");
       return await matchWithOpenAI(resumeText, jobDescription);
     } catch (error) {
       console.error("Error with OpenAI matching:", error);
       
       // If Anthropic is available, try it as fallback
       if (ANTHROPIC_API_KEY) {
-        console.log("Falling back to Anthropic for job matching");
+        // console.log("Falling back to Anthropic for job matching");
         return await matchWithAnthropic(resumeText, jobDescription);
       }
       
@@ -54,7 +54,7 @@ export async function matchResumeToJob(resumeText: string, jobDescription: strin
   } 
   // If no OpenAI key but Anthropic is available, use Anthropic
   else if (ANTHROPIC_API_KEY) {
-    console.log("Using Anthropic for job matching");
+    // console.log("Using Anthropic for job matching");
     return await matchWithAnthropic(resumeText, jobDescription);
   } 
   // If no AI services are available, throw an error

@@ -19,7 +19,7 @@ export function registerWorkableDirectFetch(app: Express) {
         });
       }
       
-      console.log(`Fetching Workable job from URL: ${url}`);
+      // console.log(`Fetching Workable job from URL: ${url}`);
       
       // Get the playwright worker URL from environment
       const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
@@ -32,7 +32,7 @@ export function registerWorkableDirectFetch(app: Express) {
       
       try {
         // Use the new scrapeJobDescription endpoint
-        console.log(`Calling playwright worker at ${workerUrl}/scrapeJobDescription`);
+        // console.log(`Calling playwright worker at ${workerUrl}/scrapeJobDescription`);
         const workerResponse = await fetch(`${workerUrl}/scrapeJobDescription`, {
           method: 'POST',
           headers: {
@@ -46,7 +46,7 @@ export function registerWorkableDirectFetch(app: Express) {
         if (!workerResponse.ok) {
           // Special handling for 429 rate limiting from our throttling system
           if (workerResponse.status === 429) {
-            console.log(`🐌 Playwright worker is throttled (429) for ${url}`);
+            // console.log(`🐌 Playwright worker is throttled (429) for ${url}`);
             
             try {
               const throttleData = await workerResponse.json();
@@ -83,7 +83,7 @@ export function registerWorkableDirectFetch(app: Express) {
         
         if (workerData.success && workerData.description && workerData.description !== "No description available") {
           // Successfully got job description from worker
-          console.log(`Successfully extracted job description (${workerData.description.length} characters)`);
+          // console.log(`Successfully extracted job description (${workerData.description.length} characters)`);
           
           return res.json({
             success: true,
@@ -114,7 +114,7 @@ export function registerWorkableDirectFetch(app: Express) {
         
         // Check if this was a throttling error - if so, don't fall back
         if (workerError instanceof Error && workerError.message.includes('Worker responded with status 429')) {
-          console.log("🐌 Worker is throttled - NOT falling back to direct HTML parsing to respect throttling");
+          // console.log("🐌 Worker is throttled - NOT falling back to direct HTML parsing to respect throttling");
           // The 429 response was already sent above, so we should not reach here
           // But if we do, return the throttling error
           return res.status(429).json({
@@ -128,7 +128,7 @@ export function registerWorkableDirectFetch(app: Express) {
           });
         }
         
-        console.log("Falling back to direct HTML parsing for non-throttling errors");
+        // console.log("Falling back to direct HTML parsing for non-throttling errors");
         
         // Fallback to the old method only for non-throttling errors
         return await fallbackDirectFetch(String(url), res);
@@ -149,7 +149,7 @@ export function registerWorkableDirectFetch(app: Express) {
  */
 async function fallbackDirectFetch(url: string, res: Response) {
   try {
-    console.log("Using fallback HTML parsing method");
+    // console.log("Using fallback HTML parsing method");
     
     // Fetch with browser-like headers
     const response = await fetch(url, {

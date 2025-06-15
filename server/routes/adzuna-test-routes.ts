@@ -28,11 +28,11 @@ export async function testAdzunaSearch(req: Request, res: Response) {
     const searchLocation = (location as string) || "United States";
     const searchLimit = limit ? parseInt(limit as string) : 10;
 
-    console.log(`Testing Adzuna search for user ${parsedUserId}:`, {
-      keywords: searchKeywords,
-      location: searchLocation,
-      limit: searchLimit
-    });
+    // console.log(`Testing Adzuna search for user ${parsedUserId}:`, {
+      // keywords: searchKeywords,
+      // location: searchLocation,
+      // limit: searchLimit
+    // });
 
     // Call the Adzuna search function
     const jobs = await searchJobs(parsedUserId, {
@@ -95,7 +95,7 @@ export async function testIntegratedJobSearch(req: Request, res: Response) {
       });
     }
 
-    console.log(`Testing integrated job search for user ${parsedUserId}`);
+    // console.log(`Testing integrated job search for user ${parsedUserId}`);
 
     // Call the integrated job search
     const jobs = await getJobListingsForUser(parsedUserId);
@@ -161,7 +161,7 @@ export async function testAutoApplyWithAdzuna(req: Request, res: Response) {
       });
     }
 
-    console.log(`Testing auto-apply for user ${userId} (dryRun: ${dryRun})`);
+    // console.log(`Testing auto-apply for user ${userId} (dryRun: ${dryRun})`);
 
     if (dryRun) {
       // For dry run, just get the jobs that would be processed
@@ -243,7 +243,7 @@ export async function testAdzunaHealth(req: Request, res: Response) {
     // Test API connectivity with a simple search
     const testUrl = `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${ADZUNA_APP_ID}&app_key=${ADZUNA_APP_KEY}&results_per_page=1&what=test&content-type=application/json`;
     
-    console.log("Testing Adzuna API connectivity...");
+    // console.log("Testing Adzuna API connectivity...");
     const response = await fetch(testUrl);
     
     if (!response.ok) {

@@ -17,14 +17,14 @@ import { extractTextFromPDF } from './resume-parser.js';
  */
 async function extractTextFromPDFBase64(fileData: string): Promise<string> {
   try {
-    console.log("[PDF Parser] Starting to decode base64 data...");
+    // console.log("[PDF Parser] Starting to decode base64 data...");
     // Decode base64 to buffer
     const buffer = Buffer.from(fileData, 'base64');
-    console.log("[PDF Parser] Successfully created buffer from base64, buffer size:", buffer.length);
+    // console.log("[PDF Parser] Successfully created buffer from base64, buffer size:", buffer.length);
     
     // Use the PDF parser to extract text
     const result = await extractTextFromPDF(buffer);
-    console.log("[PDF Parser] Text extraction complete, result length:", result?.length || 0);
+    // console.log("[PDF Parser] Text extraction complete, result length:", result?.length || 0);
     
     // If no text was extracted or it's very short, it might be a corrupt PDF
     if (!result || result.length < 50) {

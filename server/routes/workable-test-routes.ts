@@ -20,7 +20,7 @@ export function registerWorkableTestRoutes(app: Express) {
       let userProfile = await storage.getUserProfile(userId);
       
       if (!userProfile) {
-        console.log(`Creating test user profile for user ID: ${userId}`);
+        // console.log(`Creating test user profile for user ID: ${userId}`);
         try {
           // Create a minimal test profile with proper types
           userProfile = await storage.createUserProfile({
@@ -31,7 +31,7 @@ export function registerWorkableTestRoutes(app: Express) {
             preferredWorkArrangement: 'remote' as any,
             willingToRelocate: false
           });
-          console.log('Created test user profile');
+          // console.log('Created test user profile');
         } catch (err) {
           console.error('Failed to create test user profile:', err);
         }
@@ -133,7 +133,7 @@ export function registerWorkableTestRoutes(app: Express) {
       // Try different potential endpoint paths
       const fullUrl = `${baseUrl}/api/screenshot`;
       
-      console.log(`Sending screenshot request to Playwright Worker at: ${fullUrl}`);
+      // console.log(`Sending screenshot request to Playwright Worker at: ${fullUrl}`);
       
       const response = await fetch(fullUrl, {
         method: "POST",
@@ -214,7 +214,7 @@ export function registerWorkableTestRoutes(app: Express) {
       // Build the search URL
       const searchUrl = `https://jobs.workable.com/search?query=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&remote=true`;
       
-      console.log(`Searching for Workable jobs at: ${searchUrl}`);
+      // console.log(`Searching for Workable jobs at: ${searchUrl}`);
       
       // Fetch the search results
       const response = await fetch(searchUrl);
@@ -238,7 +238,7 @@ export function registerWorkableTestRoutes(app: Express) {
         allWorkableLinks.push(generalMatch[0]);
       }
       
-      console.log(`Found ${allWorkableLinks.length} workable.com links`);
+      // console.log(`Found ${allWorkableLinks.length} workable.com links`);
       
       // Then specifically look for apply.workable.com/company/j/ links
       const applyRegex = /https:\/\/apply\.workable\.com\/[^\/]+\/j\/[^"]+/g;
@@ -249,7 +249,7 @@ export function registerWorkableTestRoutes(app: Express) {
       
       // If we didn't find any specific job links, use a backup approach
       if (jobLinks.length === 0) {
-        console.log("No direct job links found, using simplified approach");
+        // console.log("No direct job links found, using simplified approach");
         jobLinks = allWorkableLinks.filter(url => 
           url.includes('apply.workable.com') && 
           url.includes('/j/')
@@ -315,7 +315,7 @@ export function registerWorkableTestRoutes(app: Express) {
       
       // Indicate which flow we're using
       const urlType = isJobListingUrl ? "job-listing" : "direct-application";
-      console.log(`Processing Workable ${urlType} URL: ${jobUrl}`);
+      // console.log(`Processing Workable ${urlType} URL: ${jobUrl}`);
       
       // Check if Playwright worker URL is configured
       if (!process.env.VITE_PLAYWRIGHT_WORKER_URL) {
@@ -409,7 +409,7 @@ export function registerWorkableTestRoutes(app: Express) {
       const baseUrl = workerUrl.startsWith('http') ? workerUrl : `https://${workerUrl}`;
       const submitUrl = `${baseUrl}/submit`;
       
-      console.log(`Sending test request to Playwright worker at: ${submitUrl}`);
+      // console.log(`Sending test request to Playwright worker at: ${submitUrl}`);
       
       // Make the API request
       try {

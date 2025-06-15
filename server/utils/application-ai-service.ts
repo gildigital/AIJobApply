@@ -130,7 +130,7 @@ export async function generateApplicationAnswer(
     (isQAPattern && qaContext?.isWorkAuth);
     
   if (isWorkAuthQuestion) {
-    console.log(`🔍 Detected work authorization question: "${question}" (${fieldName})`);
+    // console.log(`🔍 Detected work authorization question: "${question}" (${fieldName})`);
     return "Yes, I am legally authorized to work in this country without sponsorship.";
   }
   
@@ -154,12 +154,12 @@ export async function generateApplicationAnswer(
   let enhancedPrompt = false;
   
   if (isQAPattern && qaContext) {
-    console.log(`Processing QA_* pattern field: ${fieldName} with enhanced context`);
+    // console.log(`Processing QA_* pattern field: ${fieldName} with enhanced context`);
     
     // Check for problematic SVG labels and flag if found
     const hasSvgProblem = qaContext.hasSvgProblem || false;
     if (hasSvgProblem) {
-      console.log(`⚠️ Field ${fieldName} has SVG label problem - using enhanced context`);
+      // console.log(`⚠️ Field ${fieldName} has SVG label problem - using enhanced context`);
     }
     
     // Build a richer context string from available context data
@@ -213,7 +213,7 @@ export async function generateApplicationAnswer(
     if (contextParts.length > 0) {
       enhancedQuestion = `${contextParts.join('\n')}\n\nOriginal question field text: ${question}`;
       enhancedPrompt = true;
-      console.log(`Enhanced question from surrounding context: ${enhancedQuestion}`);
+      // console.log(`Enhanced question from surrounding context: ${enhancedQuestion}`);
     }
   }
   
@@ -231,9 +231,9 @@ export async function generateApplicationAnswer(
   
   // Log plan restrictions for debugging
   if (userPlan) {
-    console.log(`🔐 User plan: ${userPlan}`);
-    console.log(`🤖 Available AI models: ${availableModels.join(', ')}`);
-    console.log(`⚡ 24/7 AI Reliability: ${hasReliabilityFeature ? 'YES' : 'NO'}`);
+    // console.log(`🔐 User plan: ${userPlan}`);
+    // console.log(`🤖 Available AI models: ${availableModels.join(', ')}`);
+    // console.log(`⚡ 24/7 AI Reliability: ${hasReliabilityFeature ? 'YES' : 'NO'}`);
   }
   
   // Check if user can access OpenAI models
@@ -257,7 +257,7 @@ export async function generateApplicationAnswer(
   // Try OpenAI first if user has access and key is available
   if (canUseOpenAI && OPENAI_API_KEY) {
     try {
-      console.log(`🔄 Using OpenAI model: ${openAIModel} for user plan: ${userPlan || 'unknown'}`);
+      // console.log(`🔄 Using OpenAI model: ${openAIModel} for user plan: ${userPlan || 'unknown'}`);
       
       const openAIResponse = await generateAnswerWithOpenAI(
         enhancedQuestion, 
@@ -280,7 +280,7 @@ export async function generateApplicationAnswer(
         
         // Only try Anthropic fallback if user has 24/7 reliability feature (GOLD plans)
         if (hasReliabilityFeature && canUseAnthropic && ANTHROPIC_API_KEY) {
-          console.log(`⚡ Using 24/7 AI Reliability - trying Anthropic fallback`);
+          // console.log(`⚡ Using 24/7 AI Reliability - trying Anthropic fallback`);
           const anthropicResponse = await generateAnswerWithAnthropic(
             enhancedQuestion, 
             fieldName, 
@@ -295,7 +295,7 @@ export async function generateApplicationAnswer(
             return anthropicResponse;
           }
         } else if (!hasReliabilityFeature && userPlan) {
-          console.log(`⚠️ OpenAI failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
+          // console.log(`⚠️ OpenAI failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
         }
         
         // Fallback to generic answer
@@ -307,7 +307,7 @@ export async function generateApplicationAnswer(
       
       // Only try Anthropic fallback if user has 24/7 reliability feature (GOLD plans)
       if (hasReliabilityFeature && canUseAnthropic && ANTHROPIC_API_KEY) {
-        console.log(`⚡ OpenAI error - using 24/7 AI Reliability fallback`);
+        // console.log(`⚡ OpenAI error - using 24/7 AI Reliability fallback`);
         try {
           const anthropicResponse = await generateAnswerWithAnthropic(
             enhancedQuestion, 
@@ -330,7 +330,7 @@ export async function generateApplicationAnswer(
           console.error("Error with Anthropic answer generation:", anthropicError);
         }
       } else if (!hasReliabilityFeature && userPlan) {
-        console.log(`⚠️ OpenAI failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
+        // console.log(`⚠️ OpenAI failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
       }
       
       // Return generic answer if all AI methods fail
@@ -340,7 +340,7 @@ export async function generateApplicationAnswer(
   // If no OpenAI access but user can use Anthropic, use Anthropic directly
   else if (canUseAnthropic && ANTHROPIC_API_KEY) {
     try {
-      console.log(`🔄 Using Anthropic as primary AI model for user plan: ${userPlan || 'unknown'}`);
+      // console.log(`🔄 Using Anthropic as primary AI model for user plan: ${userPlan || 'unknown'}`);
       
       const anthropicResponse = await generateAnswerWithAnthropic(
         enhancedQuestion, 
@@ -419,10 +419,10 @@ export async function generateCoverLetter(
       console.error("Error with OpenAI cover letter generation:", error);
       // Only try Anthropic fallback if user has 24/7 reliability feature (GOLD plans)
       if (hasReliabilityFeature && canUseAnthropic && ANTHROPIC_API_KEY) {
-        console.log(`⚡ OpenAI cover letter failed - using 24/7 AI Reliability fallback`);
+        // console.log(`⚡ OpenAI cover letter failed - using 24/7 AI Reliability fallback`);
         return await generateCoverLetterWithAnthropic(resumeText, userProfile, jobDescription, company, jobTitle);
       } else if (!hasReliabilityFeature && userPlan) {
-        console.log(`⚠️ OpenAI cover letter failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
+        // console.log(`⚠️ OpenAI cover letter failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
       }
       // If no AI services available, return a generic cover letter
       return getGenericCoverLetter(userProfile, jobDescription);
@@ -860,12 +860,12 @@ export async function selectBestOptionWithAI(
     (isQAPattern && qaContext?.isWorkAuth);
   
   if (isWorkAuthQuestion) {
-    console.log(`🔍 Handling work authorization options selection for question: "${question}"`);
+    // console.log(`🔍 Handling work authorization options selection for question: "${question}"`);
     
     // Look for "yes" option first for work authorization
     const yesIndex = labels.findIndex(l => l.includes('yes'));
     if (yesIndex >= 0) {
-      console.log(`✅ Selected "yes" option for work authorization question`);
+      // console.log(`✅ Selected "yes" option for work authorization question`);
       return yesIndex;
     }
     
@@ -879,7 +879,7 @@ export async function selectBestOptionWithAI(
     for (const positiveOption of positiveOptions) {
       const positiveIndex = labels.findIndex(l => l.includes(positiveOption));
       if (positiveIndex >= 0) {
-        console.log(`✅ Selected positive option "${labels[positiveIndex]}" for work authorization question`);
+        // console.log(`✅ Selected positive option "${labels[positiveIndex]}" for work authorization question`);
         return positiveIndex;
       }
     }
@@ -891,7 +891,7 @@ export async function selectBestOptionWithAI(
       // Find first option that doesn't include negative terms
       const fallbackIndex = labels.findIndex(l => !negativeOptions.some(neg => l.includes(neg)));
       if (fallbackIndex >= 0) {
-        console.log(`⚠️ Selected fallback option "${labels[fallbackIndex]}" for work authorization question`);
+        // console.log(`⚠️ Selected fallback option "${labels[fallbackIndex]}" for work authorization question`);
         return fallbackIndex;
       }
     }
@@ -935,14 +935,14 @@ export async function selectBestOptionWithAI(
       
       // Only try Anthropic fallback if user has 24/7 reliability feature (GOLD plans)
       if (hasReliabilityFeature && canUseAnthropic && ANTHROPIC_API_KEY) {
-        console.log(`⚡ OpenAI option selection failed - using 24/7 AI Reliability fallback`);
+        // console.log(`⚡ OpenAI option selection failed - using 24/7 AI Reliability fallback`);
         try {
           return await selectOptionWithAnthropic(question, options, resumeText, userProfile, jobDescription);
         } catch (error) {
           console.error("Error with Anthropic option selection:", error);
         }
       } else if (!hasReliabilityFeature && userPlan) {
-        console.log(`⚠️ OpenAI option selection failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
+        // console.log(`⚠️ OpenAI option selection failed but user plan (${userPlan}) does not include 24/7 AI Reliability`);
       }
     }
   } else if (canUseAnthropic && ANTHROPIC_API_KEY) {

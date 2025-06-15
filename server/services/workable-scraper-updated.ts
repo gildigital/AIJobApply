@@ -161,7 +161,7 @@ export class WorkableScraper {
    * Perform a job search with the given parameters
    */
   async searchJobs(params: WorkableSearchParams = {}, userId?: number): Promise<{ jobs: JobListing[], continueToken?: string, hasMore: boolean }> {
-    console.log(`[Workable] Searching jobs with params:`, params);
+    // console.log(`[Workable] Searching jobs with params:`, params);
     
     // Get user profile for personalized search
     let profile: EnhancedUserProfile | undefined;
@@ -203,7 +203,7 @@ export class WorkableScraper {
       }
     }
 
-    console.log(`[Workable] Final search parameters:`, combinedParams);
+    // console.log(`[Workable] Final search parameters:`, combinedParams);
     
     try {
       // Construct URL parameters
@@ -343,7 +343,7 @@ export class WorkableScraper {
    */
   async getJobFormSchema(job: JobListing): Promise<any> {
     try {
-      console.log(`[Workable] Getting form schema for job: ${job.title} (${job.id})`);
+      // console.log(`[Workable] Getting form schema for job: ${job.title} (${job.id})`);
       
       // Extract company subdomain and job shortcode from the apply URL
       const url = new URL(job.applyUrl);
@@ -377,7 +377,7 @@ export class WorkableScraper {
    */
   async submitApplication(job: JobListing, userId: number): Promise<JobApplicationResponse> {
     try {
-      console.log(`[Workable] Submitting application for job: ${job.title} (${job.id})`);
+      // console.log(`[Workable] Submitting application for job: ${job.title} (${job.id})`);
       
       // Get user profile data
       const profile = await storage.getUserProfile(userId) as unknown as EnhancedUserProfile;
@@ -414,7 +414,7 @@ export class WorkableScraper {
         });
         
         if (!roleMatch) {
-          console.log(`[Workable] Job title "${job.title}" doesn't match any of user's desired roles: ${profile.desiredRoles.join(', ')}`);
+          // console.log(`[Workable] Job title "${job.title}" doesn't match any of user's desired roles: ${profile.desiredRoles.join(', ')}`);
         }
       }
       
@@ -437,7 +437,7 @@ export class WorkableScraper {
       
       // Mock API call to submit application
       // In a real implementation, this would make a POST request to the Workable API
-      console.log(`[Workable] Would submit application data:`, applicationData);
+      // console.log(`[Workable] Would submit application data:`, applicationData);
       
       // Record this as a successful submission
       this.recordSuccess(job.applyUrl, applicationData, {
@@ -488,7 +488,7 @@ export class WorkableScraper {
    */
   async parseJobDetails(jobUrl: string): Promise<Partial<WorkableJob> | null> {
     try {
-      console.log(`[Workable] Parsing job details from: ${jobUrl}`);
+      // console.log(`[Workable] Parsing job details from: ${jobUrl}`);
       
       // Fetch the job page HTML
       const response = await fetch(jobUrl);

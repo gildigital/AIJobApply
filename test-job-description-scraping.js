@@ -11,16 +11,16 @@ const TEST_JOBS = [
 ];
 
 async function testJobDescriptionScraping() {
-  console.log('🧪 Testing Job Description Scraping');
-  console.log(`Using Playwright Worker at: ${PLAYWRIGHT_WORKER_URL}`);
-  console.log('');
+  // console.log('🧪 Testing Job Description Scraping');
+  // console.log(`Using Playwright Worker at: ${PLAYWRIGHT_WORKER_URL}`);
+  // console.log('');
 
   for (let i = 0; i < TEST_JOBS.length; i++) {
     const jobUrl = TEST_JOBS[i];
-    console.log(`📝 Test ${i + 1}/${TEST_JOBS.length}: ${jobUrl}`);
+    // console.log(`📝 Test ${i + 1}/${TEST_JOBS.length}: ${jobUrl}`);
     
     try {
-      console.log('  → Calling scrapeJobDescription endpoint...');
+      // console.log('  → Calling scrapeJobDescription endpoint...');
       const response = await fetch(`${PLAYWRIGHT_WORKER_URL}/scrapeJobDescription`, {
         method: 'POST',
         headers: {
@@ -30,115 +30,115 @@ async function testJobDescriptionScraping() {
       });
 
       if (!response.ok) {
-        console.log(`  ❌ HTTP Error: ${response.status} ${response.statusText}`);
+        // console.log(`  ❌ HTTP Error: ${response.status} ${response.statusText}`);
         continue;
       }
 
       const data = await response.json();
       
       if (data.success) {
-        console.log(`  ✅ Success!`);
-        console.log(`     Title: "${data.title}"`);
-        console.log(`     Company: "${data.company}"`);
-        console.log(`     Location: "${data.location}" ${data.isRemote ? '(Remote)' : ''}`);
-        console.log(`     Description: ${data.description.length} characters`);
+        // console.log(`  ✅ Success!`);
+        // console.log(`     Title: "${data.title}"`);
+        // console.log(`     Company: "${data.company}"`);
+        // console.log(`     Location: "${data.location}" ${data.isRemote ? '(Remote)' : ''}`);
+        // console.log(`     Description: ${data.description.length} characters`);
         
         // Validate extraction quality
         if (data.title && !data.title.includes('|') && !data.title.includes('Jobs By Workable')) {
-          console.log(`     ✅ Job title extracted cleanly`);
+          // console.log(`     ✅ Job title extracted cleanly`);
         } else {
-          console.log(`     ⚠️  Job title may need cleaning: "${data.title}"`);
+          // console.log(`     ⚠️  Job title may need cleaning: "${data.title}"`);
         }
         
         if (data.company && !data.company.includes('|') && !data.company.includes('Jobs By Workable')) {
-          console.log(`     ✅ Company name extracted cleanly`);
+          // console.log(`     ✅ Company name extracted cleanly`);
         } else {
-          console.log(`     ⚠️  Company name may need cleaning: "${data.company}"`);
+          // console.log(`     ⚠️  Company name may need cleaning: "${data.company}"`);
         }
         
         if (data.description.length > 100) {
-          console.log(`     Preview: ${data.description.substring(0, 100)}...`);
+          // console.log(`     Preview: ${data.description.substring(0, 100)}...`);
         } else {
-          console.log(`     Full Description: ${data.description}`);
+          // console.log(`     Full Description: ${data.description}`);
         }
       } else {
-        console.log(`  ❌ Scraping failed: ${data.error}`);
+        // console.log(`  ❌ Scraping failed: ${data.error}`);
       }
       
     } catch (error) {
-      console.log(`  ❌ Request failed: ${error.message}`);
+      // console.log(`  ❌ Request failed: ${error.message}`);
     }
     
-    console.log('');
+    // console.log('');
   }
   
-  console.log('🏁 Job description scraping test completed');
+  // console.log('🏁 Job description scraping test completed');
 }
 
 async function testAIJobApplyIntegration() {
-  console.log('🤖 Testing AIJobApply Integration');
-  console.log('Testing the /api/workable/direct-fetch endpoint...');
-  console.log('');
+  // console.log('🤖 Testing AIJobApply Integration');
+  // console.log('Testing the /api/workable/direct-fetch endpoint...');
+  // console.log('');
 
   const AIJobApplyURL = process.env.VITE_BACKEND_URL || 'http://localhost:5000';
   
   for (let i = 0; i < TEST_JOBS.length; i++) {
     const jobUrl = TEST_JOBS[i];
-    console.log(`📋 Test ${i + 1}/${TEST_JOBS.length}: ${jobUrl}`);
+    // console.log(`📋 Test ${i + 1}/${TEST_JOBS.length}: ${jobUrl}`);
     
     try {
-      console.log('  → Calling AIJobApply direct-fetch endpoint...');
+      // console.log('  → Calling AIJobApply direct-fetch endpoint...');
       const response = await fetch(`${AIJobApplyURL}/api/workable/direct-fetch?url=${encodeURIComponent(jobUrl)}`);
 
       if (!response.ok) {
-        console.log(`  ❌ HTTP Error: ${response.status} ${response.statusText}`);
+        // console.log(`  ❌ HTTP Error: ${response.status} ${response.statusText}`);
         continue;
       }
 
       const data = await response.json();
       
       if (data.success && data.job) {
-        console.log(`  ✅ Success!`);
-        console.log(`     Title: ${data.job.title}`);
-        console.log(`     Company: ${data.job.company}`);
-        console.log(`     Location: ${data.job.location}`);
-        console.log(`     Description: ${data.job.description.length} characters`);
+        // console.log(`  ✅ Success!`);
+        // console.log(`     Title: ${data.job.title}`);
+        // console.log(`     Company: ${data.job.company}`);
+        // console.log(`     Location: ${data.job.location}`);
+        // console.log(`     Description: ${data.job.description.length} characters`);
         
         if (data.job.description !== "No description available") {
-          console.log(`     ✅ Job description extracted successfully!`);
+          // console.log(`     ✅ Job description extracted successfully!`);
           if (data.job.description.length > 100) {
-            console.log(`     Preview: ${data.job.description.substring(0, 100)}...`);
+            // console.log(`     Preview: ${data.job.description.substring(0, 100)}...`);
           }
         } else {
-          console.log(`     ⚠️  No job description extracted`);
+          // console.log(`     ⚠️  No job description extracted`);
         }
       } else {
-        console.log(`  ❌ Failed: ${data.error || 'Unknown error'}`);
+        // console.log(`  ❌ Failed: ${data.error || 'Unknown error'}`);
       }
       
     } catch (error) {
-      console.log(`  ❌ Request failed: ${error.message}`);
+      // console.log(`  ❌ Request failed: ${error.message}`);
     }
     
-    console.log('');
+    // console.log('');
   }
   
-  console.log('🎯 AIJobApply integration test completed');
+  // console.log('🎯 AIJobApply integration test completed');
 }
 
 // Run the tests
 async function main() {
-  console.log('🚀 Starting Job Description Scraping Tests\n');
+  // console.log('🚀 Starting Job Description Scraping Tests\n');
   
   // Test 1: Direct playwright-worker endpoint
   await testJobDescriptionScraping();
   
-  console.log('\n' + '='.repeat(60) + '\n');
+  // console.log('\n' + '='.repeat(60) + '\n');
   
   // Test 2: AIJobApply integration
   await testAIJobApplyIntegration();
   
-  console.log('\n✨ All tests completed!');
+  // console.log('\n✨ All tests completed!');
 }
 
 main().catch(error => {
