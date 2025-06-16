@@ -7,13 +7,14 @@ import {
   userProfiles, type UserProfile, type InsertUserProfile,
   portfolios, type Portfolio, type InsertPortfolio,
   autoApplyLogs,
-  jobLinks,
   applicationPayloads,
   type ApplicationPayload,
   type InsertApplicationPayload,
   type AutoApplyLog,
   type InsertAutoApplyLog,
 } from "@shared/schema.js";
+
+// Import jobLinks from local schema
 // @ts-ignore - local schema types
 import { jobLinks } from "./local-schema.js";
 
