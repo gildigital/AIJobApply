@@ -159,29 +159,28 @@ export async function processQueuedApplication(queuedJobId: number): Promise<'su
       return 'error';
     }
 
-    // Submit to Playwright worker with no timeout constraints
-    // The worker can take as long as it needs
-    const result = await submitToPlaywrightWorker(payload);
+    // Get queued job for IDs
+    const queuedJob = await storage.getQueuedJob(queuedJobId);
+    
+    // Submit to Playwright worker with callback configuration
+    // Add queue and job IDs for status callbacks
+    const payloadWithIds = {
+      ...payload,
+      queueId: queuedJobId,
+      jobId: queuedJob?.jobId
+    };
+    
+    const result = await submitToPlaywrightWorker(payloadWithIds);
 
-    // Update job status based on result
+    // For async processing, we only update to 'processing' status
+    // The worker will call back with final status
     await storage.updateQueuedJob(queuedJobId, {
-      status: result === 'success' ? 'completed' : 
-              result === 'skipped' ? 'skipped' : 'failed',
-      error: result === 'error' ? 'Application submission failed' : undefined,
+      status: 'processing',
       processedAt: new Date(),
       updatedAt: new Date()
     });
 
-    // Update the job tracker record if we have a job ID
-    const queuedJob = await storage.getQueuedJob(queuedJobId);
-    if (queuedJob?.jobId) {
-      await storage.updateJobInTracker(queuedJob.jobId, {
-        applicationStatus: result === 'success' ? 'applied' : 
-                          result === 'skipped' ? 'skipped' : 'failed',
-        appliedAt: result === 'success' ? new Date() : undefined,
-        submittedAt: new Date()
-      });
-    }
+    // Don't update job tracker here - worker will handle it via callback
 
     // Clean up the payload data
     await storage.deleteApplicationPayload(queuedJobId);
@@ -204,22 +203,34 @@ export async function processQueuedApplication(queuedJobId: number): Promise<'su
 }
 
 /**
- * Submit to Playwright worker without timeout constraints
+ * Submit to Playwright worker with callback configuration
  * 
- * This is the fire-and-forget version that doesn't worry about timeouts.
- * The job queue system handles retries and failure recovery.
+ * This sends job to worker and immediately gets 202 Accepted response.
+ * Worker calls back to report final status asynchronously.
  */
 async function submitToPlaywrightWorker(payload: any): Promise<'success' | 'skipped' | 'error'> {
   try {
     const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
+    const mainServerUrl = process.env.VITE_BACKEND_URL; // For callbacks
+    const sharedSecret = process.env.WORKER_SHARED_SECRET;
+    
     if (!workerUrl) {
       throw new Error("No Playwright worker URL configured");
+    }
+    
+    if (!mainServerUrl) {
+      throw new Error("No backend URL configured for callbacks");
+    }
+    
+    if (!sharedSecret) {
+      throw new Error("No worker shared secret configured");
     }
 
     const completeWorkerUrl = workerUrl.startsWith("http") ? workerUrl : `https://${workerUrl}`;
 
-    // Prepare the payload for the Playwright worker
+    // Enhanced payload with callback information
     const workerPayload = {
+      // Original job data
       user: {
         id: payload.user.id,
         name: payload.user.name,
@@ -244,47 +255,39 @@ async function submitToPlaywrightWorker(payload: any): Promise<'success' | 'skip
         externalJobId: payload.job.externalJobId,
       },
       matchScore: payload.matchScore,
-      formData: payload.formData
+      formData: payload.formData,
+      
+      // NEW: Callback configuration
+      callback: {
+        url: `${mainServerUrl}/api/worker/update-job-status`,
+        secret: sharedSecret,
+        queueId: payload.queueId,  // job_queue.id
+        jobId: payload.jobId,      // job_tracker.id  
+        userId: payload.user.id
+      }
     };
 
-    console.log(`🔄 Submitting application to Playwright worker (no timeout): ${payload.job.jobTitle} at ${payload.job.company}`);
+    console.log(`🔄 Submitting application to Playwright worker (async): ${payload.job.jobTitle} at ${payload.job.company}`);
 
-    // Make the request with a very long timeout (30 minutes)
-    // This is acceptable since we're now running async
+    // Make the request with short timeout - just for handoff confirmation
     const response = await fetch(`${completeWorkerUrl}/submit`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(workerPayload),
-      // 30 minute timeout - much more reasonable for async processing
-      signal: AbortSignal.timeout(30 * 60 * 1000)
+      signal: AbortSignal.timeout(30000) // 30 second timeout for handoff
     });
 
-    if (!response.ok) {
-      console.error(`Playwright worker returned status ${response.status}`);
-      return 'error';
-    }
-
-    const result = await response.json();
-    
-    if (result.success) {
-      console.log(`✅ Application submitted successfully: ${payload.job.jobTitle} at ${payload.job.company}`);
+    if (response.status === 202) {
+      console.log(`✅ Job queued successfully in worker`);
       return 'success';
-    } else if (result.skipped) {
-      console.log(`⏭️ Application skipped: ${payload.job.jobTitle} at ${payload.job.company} - ${result.reason || 'Unknown reason'}`);
-      return 'skipped';
-    } else {
-      console.error(`❌ Application failed: ${payload.job.jobTitle} at ${payload.job.company} - ${result.error || 'Unknown error'}`);
-      return 'error';
     }
+    
+    throw new Error(`Worker rejected job: ${response.status}`);
 
   } catch (error) {
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      console.error('Playwright worker timed out after 30 minutes - this indicates a serious issue with the worker');
-    } else {
-      console.error('Error submitting to Playwright worker:', error);
-    }
+    console.error('Error submitting to Playwright worker:', error);
     return 'error';
   }
 } 

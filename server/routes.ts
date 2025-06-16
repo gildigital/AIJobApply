@@ -1595,6 +1595,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Handle plan restriction errors
   app.use(handlePlanErrors);
 
+  // Worker status update callback endpoint
+  app.post("/api/worker/update-job-status", async (req, res) => {
+    try {
+      // 1. Authenticate the worker with shared secret
+      const sharedSecret = process.env.WORKER_SHARED_SECRET;
+      const requestSecret = req.headers['x-worker-secret'];
+
+      if (!sharedSecret || requestSecret !== sharedSecret) {
+        console.error('Unauthorized worker callback attempt');
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // 2. Extract status update payload
+      const { 
+        queueId,        // job_queue.id 
+        jobId,          // job_tracker.id
+        userId, 
+        finalStatus,    // 'completed', 'failed', 'skipped'
+        message,
+        applicationUrl,
+        submissionDetails 
+      } = req.body;
+
+      if (!queueId || !finalStatus) {
+        return res.status(400).json({ error: 'Missing required fields: queueId, finalStatus' });
+      }
+
+      console.log(`[Worker Callback] Job ${queueId} final status: ${finalStatus}`);
+
+      // 3. Update the job queue status
+      await storage.updateQueuedJob(queueId, {
+        status: finalStatus,
+        error: finalStatus === 'failed' ? message : null,
+        processedAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      // 4. Update the job tracker if we have a jobId
+      if (jobId) {
+        const applicationStatus = finalStatus === 'completed' ? 'applied' : 
+                                finalStatus === 'skipped' ? 'skipped' : 'failed';
+        
+        await storage.updateJob(jobId, {
+          applicationStatus,
+          appliedAt: finalStatus === 'completed' ? new Date() : undefined,
+          submittedAt: new Date(),
+          notes: message
+        });
+      }
+
+      // 5. Create activity log
+      if (userId) {
+        await createAutoApplyLog({
+          userId,
+          jobId,
+          status: finalStatus === 'completed' ? 'Applied' : 'Failed',
+          message: message || `Job ${finalStatus} by worker`
+        });
+      }
+
+      res.status(200).json({ 
+        success: true, 
+        message: 'Job status updated successfully' 
+      });
+
+    } catch (error: any) {
+      console.error('Error updating job status from worker:', error);
+      res.status(500).json({ 
+        error: 'Failed to update job status',
+        details: error.message 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
