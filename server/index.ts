@@ -20,6 +20,7 @@ import { registerDirectFetchTestRoutes } from "./routes/direct-fetch-test-routes
 import { registerWorkableDirectFetch } from "./routes/workable-direct-fetch.js";
 import { registerWorkableTestRoutes } from "./routes/workable-test-routes.js";
 import { registerDiagnosticsRoutes } from "./routes/diagnostics-routes.js";
+import { registerAdminRoutes } from "./routes/admin-routes.js";
 
 const log = console.log; // Use standard console.log directly
 const app: Express = express();
@@ -149,6 +150,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   registerDirectFetchTestRoutes(app);
   registerWorkableDirectFetch(app);
   registerWorkableTestRoutes(app);
+  registerAdminRoutes(app);
 
   if (process.env.NODE_ENV === "development") {
     registerDiagnosticsRoutes(app);

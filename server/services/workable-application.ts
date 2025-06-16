@@ -177,12 +177,19 @@ export async function submitWorkableApplication(
       };
     }
 
-    // Generate form field mappings using AI
-    const formData = await processFormWithAI(fields, userData, profile, job, matchScore);
+    // Generate form field mappings using AI (with fallback for FREE users)
+    let formData = await processFormWithAI(fields, userData, profile, job, matchScore);
     
     if (!formData) {
-      console.error("Failed to process form data with AI");
-      return "error";
+      console.error("Failed to process form data with AI, using basic fallback");
+      // For FREE users, create basic form data using simple mappings
+      const basicFormData = createBasicFormData(fields, userData);
+      if (!basicFormData || Object.keys(basicFormData).length === 0) {
+        console.error("Failed to create basic form data");
+        return "error";
+      }
+      console.log("✅ Using basic form data processing for FREE user");
+      formData = basicFormData;
     }
 
     console.log(`✅ Application data processing completed`);
@@ -662,4 +669,51 @@ async function generateCustomAnswers(
   }
 
   return `I appreciate this question and would be happy to discuss it in more detail during an interview. Based on my understanding of the ${job.jobTitle} role at ${job.company}, I believe my background and approach would align well with what you're looking for.`;
+}
+
+/**
+ * Create basic form data without AI for FREE users
+ * This provides simple field mappings for common form fields
+ */
+function createBasicFormData(fields: any[], userData: any): Record<string, any> {
+  const formData: Record<string, any> = {};
+  
+  for (const field of fields) {
+    const fieldName = field.name || field.id;
+    if (!fieldName) continue;
+    
+    const label = (field.label || '').toLowerCase();
+    const name = fieldName.toLowerCase();
+    
+    // Basic field mappings
+    if (name.includes('first') || name === 'firstname' || label.includes('first name')) {
+      formData[fieldName] = userData.firstName || '';
+    } else if (name.includes('last') || name === 'lastname' || label.includes('last name')) {
+      formData[fieldName] = userData.lastName || '';
+    } else if (name === 'email' || field.type === 'email') {
+      formData[fieldName] = userData.email || '';
+    } else if (name.includes('phone') || field.type === 'tel') {
+      formData[fieldName] = userData.phone || '';
+    } else if (name.includes('name') && !name.includes('first') && !name.includes('last')) {
+      formData[fieldName] = userData.name || '';
+    } else if (field.type === 'checkbox') {
+      // Default checkboxes to false
+      formData[fieldName] = false;
+    } else if (field.type === 'select' && field.options && field.options.length > 0) {
+      // Select first option by default
+      formData[fieldName] = field.options[0].value || field.options[0];
+    } else if (field.type === 'textarea') {
+      // Provide basic text for textarea fields
+      if (name.includes('cover') || name.includes('letter') || label.includes('cover letter')) {
+        formData[fieldName] = `I am interested in the ${userData.jobTitle || 'position'} role and believe my skills would be a good fit.`;
+      } else {
+        formData[fieldName] = 'I am interested in this opportunity.';
+      }
+    } else {
+      // Default text fields to empty string
+      formData[fieldName] = '';
+    }
+  }
+  
+  return formData;
 }
