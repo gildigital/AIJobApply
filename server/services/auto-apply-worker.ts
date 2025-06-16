@@ -21,7 +21,7 @@ import { eq } from "drizzle-orm";
 import { processQueuedApplication } from "./job-application-queue.js";
 
 // 🎯 INTELLIGENT WORK MANAGEMENT CONFIGURATION
-const WORK_COORDINATOR_INTERVAL_MS = 10 * 60 * 1000; // Check every 10 minutes (was 10 seconds!)
+const WORK_COORDINATOR_INTERVAL_MS = 6 * 60 * 1000; // Check every 6 minutes (was 10 minutes)
 const JOB_PROCESSOR_INTERVAL_MS = 30 * 1000; // Process queued jobs every 30 seconds
 const DEFAULT_BATCH_SIZE = 1; // Process 1 job at a time (was 5)
 const DELAY_BETWEEN_APPLICATIONS_MS = 45000; // 45 seconds between applications (was 5 seconds)

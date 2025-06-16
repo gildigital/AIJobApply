@@ -541,6 +541,21 @@ async function processJobInBatch(
             matchResult.reasons.join('\n'),
             applicationStatus
           );
+        } else if (result === "processing") {
+          // NEW: Worker accepted job for background processing
+          let status = "Processing";
+          let applicationStatus = "processing";
+          message = `Job submitted for background processing: ${job.company} - ${job.jobTitle}`;
+          
+          // Add to job tracker with processing status - callback will update when complete
+          jobRecord = await addJobToTracker(
+            userId,
+            job,
+            matchResult.matchScore,
+            status,
+            matchResult.reasons.join('\n'),
+            applicationStatus
+          );
         } else {
           // TODO: Track statistics for non-Applied job outcomes instead of adding to job_tracker table
           // Consider implementing a separate statistics/analytics system for:
@@ -553,14 +568,14 @@ async function processJobInBatch(
         }
 
         // Add detailed logging before creating the log
-        // console.log(`[AUTO-APPLY-DEBUG] Creating log entry with status: ${result === "success" ? "Applied" : (result === "skipped" ? "Skipped" : "Failed")}`);
+        // console.log(`[AUTO-APPLY-DEBUG] Creating log entry with status: ${result === "success" ? "Applied" : (result === "processing" ? "Processing" : (result === "skipped" ? "Skipped" : "Failed"))}`);
 
-        // Log the application attempt - keep only "Applied" status
-        if (result === "success" && jobRecord) {
+        // Log the application attempt - include Processing status
+        if ((result === "success" || result === "processing") && jobRecord) {
           await createAutoApplyLog({
             userId,
             jobId: jobRecord.id,
-            status: "Applied",
+            status: result === "success" ? "Applied" : "Processing",
             message
           });
         } else {
@@ -578,8 +593,8 @@ async function processJobInBatch(
         // Add a small delay between applications to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Return true only if we successfully applied
-        return { applicationSubmitted: result === "success" };
+        // Return true for both success AND processing (since processing means we submitted it)
+        return { applicationSubmitted: result === "success" || result === "processing" };
       } catch (error: any) {
         // TODO: Track statistics for application errors instead of adding to job_tracker table
         // Consider implementing a separate error tracking/analytics system for:
@@ -924,7 +939,7 @@ function calculateMatchScore(
  * @param job The job listing to apply to
  * @returns Result of the application attempt: "success", "skipped", or "error"
  */
-export async function submitApplication(user: any, job: JobListing): Promise<"success" | "skipped" | "error"> {
+export async function submitApplication(user: any, job: JobListing): Promise<"success" | "processing" | "skipped" | "error"> {
   try {
     // console.log(`Attempting to submit application for ${job.jobTitle} at ${job.company} from source: ${job.source || 'unknown'}`);
 
@@ -992,7 +1007,7 @@ async function submitApplicationToPlaywright(
   profile: any | undefined,
   job: JobListing,
   matchScore: number
-): Promise<"success" | "skipped" | "error"> {
+): Promise<"success" | "processing" | "skipped" | "error"> {
   // Check if we have a worker URL configured
   const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
   if (!workerUrl) {
@@ -1223,8 +1238,13 @@ async function submitApplicationToPlaywright(
       const result = await response.json();
       // console.log("Playwright worker response:", result);
 
-      if (result.status === "success") {
-        // console.log(`Application successfully submitted via Playwright worker`);
+      if (result.status === "accepted") {
+        // Worker accepted the job for background processing - NOT completed yet!
+        console.log(`📋 Job submitted for background processing: ${job.company} - ${job.jobTitle} (Processing ID: ${result.processingId})`);
+        return "processing"; // NEW: Return processing status, not success
+      } else if (result.status === "success") {
+        // Immediate success (shouldn't happen with async architecture, but handle it)
+        console.log(`✅ Application immediately successful: ${job.company} - ${job.jobTitle}`);
         return "success";
       } else if (result.status === "skipped") {
         // console.log(`Application skipped by Playwright worker: ${result.error || "No reason provided"}`);
