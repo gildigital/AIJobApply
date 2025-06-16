@@ -104,7 +104,7 @@ export async function submitWorkableApplication(
   profile: UserProfile | undefined,
   job: JobListing,
   matchScore: number,
-): Promise<"success" | "skipped" | "error"> {
+): Promise<"success" | "processing" | "skipped" | "error"> {
   console.log(`⏳ Starting async application submission process for ${job.jobTitle} at ${job.company}...`);
   
   try {
@@ -213,9 +213,9 @@ export async function submitWorkableApplication(
       console.log(`✅ Application queued successfully: ${queueResult.message}`);
       console.log(`📋 Queue ID: ${queueResult.queuedJobId} - Application will be processed asynchronously`);
       
-      // Return success immediately - the job is now queued for processing
+      // Return processing since the job is queued for async processing
       // The actual browser automation will happen in the background
-      return "success";
+      return "processing";
     } else {
       console.error(`Failed to queue application: ${queueResult.message}`);
       return "error";

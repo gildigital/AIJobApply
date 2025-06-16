@@ -1645,15 +1645,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // 5. Create activity log
-      if (userId) {
+      // 5. Create activity log ONLY for successful completions
+      if (userId && finalStatus === 'completed') {
         await createAutoApplyLog({
           userId,
           jobId,
-          status: finalStatus === 'completed' ? 'Applied' : 'Failed',
-          message: message || `Job ${finalStatus} by worker`
+          status: 'Applied',
+          message: message || `Application submitted successfully for ${jobId}`
         });
       }
+      // Failed and skipped jobs only update queue status - no auto-apply logs
 
       res.status(200).json({ 
         success: true, 

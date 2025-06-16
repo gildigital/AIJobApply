@@ -571,24 +571,16 @@ async function processJobInBatch(
         // console.log(`[AUTO-APPLY-DEBUG] Creating log entry with status: ${result === "success" ? "Applied" : (result === "processing" ? "Processing" : (result === "skipped" ? "Skipped" : "Failed"))}`);
 
         // Log the application attempt - include Processing status
-        if ((result === "success" || result === "processing") && jobRecord) {
+        if (result === "success" && jobRecord) {
+          // Only create auto-apply logs for actual successful applications
           await createAutoApplyLog({
             userId,
             jobId: jobRecord.id,
-            status: result === "success" ? "Applied" : "Processing",
+            status: "Applied",
             message
           });
-        } else {
-          // TODO: Track statistics for non-Applied status instead of logging to auto_apply_logs table
-          // await createAutoApplyLog({
-          //   userId,
-          //   jobId: jobRecord?.id,
-          //   status: result === "skipped" ? "Skipped" : "Failed",
-          //   message
-          // });
         }
-
-        // console.log(`[AUTO-APPLY-DEBUG] Log entry created with message: ${message}`);
+        // Processing, skipped, and failed jobs only update queue status - no auto-apply logs
 
         // Add a small delay between applications to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 2000));
