@@ -208,6 +208,15 @@ export const jobQueue = pgTable("job_queue", {
     attemptCount: integer("attempt_count").default(0).notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Application Payloads table - stores the data needed for job applications
+export const applicationPayloads = pgTable("application_payloads", {
+    id: serial("id").primaryKey(),
+    queuedJobId: integer("queued_job_id").notNull().references(() => jobQueue.id),
+    payload: text("payload").notNull(), // JSON-serialized application data
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Job Links table - stores scraped job URLs before processing
 export const jobLinks = pgTable("job_links", {
     id: serial("id").primaryKey(),
@@ -237,6 +246,14 @@ export const insertJobQueueSchema = z.object({
     attemptCount: z.number().optional().default(0),
     updatedAt: z.date().optional(),
 });
+
+// Application Payloads schema
+export const insertApplicationPayloadSchema = z.object({
+    queuedJobId: z.number(),
+    payload: z.string(),
+    createdAt: z.date().optional(),
+});
+
 // Job Links schema
 export const insertJobLinksSchema = z.object({
     userId: z.number(),
