@@ -33,8 +33,7 @@ interface UserWorkState {
   isProcessingApplications: boolean;
   lastJobSearchTime: number;
   lastApplicationTime: number;
-  searchCooldownEnd: number;
-  applicationCooldownEnd: number;
+  applicationCooldownEnd: number; // Keep this one for application spacing
 }
 
 // Track work state for each user
@@ -97,7 +96,6 @@ function getUserWorkState(userId: number): UserWorkState {
       isProcessingApplications: false,
       lastJobSearchTime: 0,
       lastApplicationTime: 0,
-      searchCooldownEnd: 0,
       applicationCooldownEnd: 0
     });
   }
@@ -109,15 +107,9 @@ function getUserWorkState(userId: number): UserWorkState {
  */
 function shouldSearchForJobs(userId: number): boolean {
   const state = getUserWorkState(userId);
-  const now = Date.now();
   
   // Don't search if already searching
   if (state.isSearchingForJobs) {
-    return false;
-  }
-  
-  // Don't search if still in cooldown
-  if (now < state.searchCooldownEnd) {
     return false;
   }
   
@@ -298,15 +290,14 @@ async function coordinateWork(): Promise<void> {
       
       console.log(`[Work Manager] 🔍 User ${user.id} needs job search - starting work`);
       
-      // Mark as searching and start the work
+      // Mark as searching and start the work (DON'T set cooldown yet!)
       state.isSearchingForJobs = true;
-      state.searchCooldownEnd = Date.now() + JOB_SEARCH_COOLDOWN_MS;
       
       try {
         // This is the ONLY place we call startAutoApply - when we actually need it!
         await startAutoApply(user.id);
         
-        // Update state after successful search
+        // Update state after successful search - NO MORE COOLDOWN!
         state.lastJobSearchTime = Date.now();
         state.isSearchingForJobs = false;
         
@@ -318,8 +309,7 @@ async function coordinateWork(): Promise<void> {
       } catch (error) {
         console.error(`[Work Manager] Error searching jobs for user ${user.id}:`, error);
         state.isSearchingForJobs = false;
-        // Reduce cooldown on error so we can try again sooner
-        state.searchCooldownEnd = Date.now() + (JOB_SEARCH_COOLDOWN_MS / 2);
+        // NO MORE COOLDOWN ON ERROR - let it retry on next cycle!
       }
     } else {
       usersInCooldown++;
@@ -779,9 +769,6 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
       });
       latestMessage = `${standby} job${standby !== 1 ? "s" : ""
         } in standby mode. Daily limit reached. Applications will resume at ${resetTimeFormatted}.`;
-    } else if (workState.searchCooldownEnd > Date.now()) {
-      const cooldownMinutes = Math.ceil((workState.searchCooldownEnd - Date.now()) / 60000);
-      latestMessage = `Job search cooldown: ${cooldownMinutes} minutes remaining.`;
     } else if (workState.applicationCooldownEnd > Date.now()) {
       const cooldownSeconds = Math.ceil((workState.applicationCooldownEnd - Date.now()) / 1000);
       latestMessage = `Application cooldown: ${cooldownSeconds} seconds remaining.`;
@@ -807,7 +794,6 @@ export async function getAutoApplyStatus(userId: number): Promise<any> {
         isProcessingApplications: workState.isProcessingApplications,
         lastJobSearchTime: workState.lastJobSearchTime ? new Date(workState.lastJobSearchTime).toISOString() : null,
         lastApplicationTime: workState.lastApplicationTime ? new Date(workState.lastApplicationTime).toISOString() : null,
-        searchCooldownEnd: workState.searchCooldownEnd ? new Date(workState.searchCooldownEnd).toISOString() : null,
         applicationCooldownEnd: workState.applicationCooldownEnd ? new Date(workState.applicationCooldownEnd).toISOString() : null,
       },
       // Worker health information
