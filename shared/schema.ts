@@ -258,8 +258,19 @@ export const insertJobQueueSchema = z.object({
   attemptCount: z.number().optional().default(0),
   updatedAt: z.date().optional(),
 });
+
+// Application Payloads table - stores the data needed for job applications
+export const applicationPayloads = pgTable("application_payloads", {
+  id: serial("id").primaryKey(),
+  queuedJobId: integer("queued_job_id").notNull().references(() => jobQueue.id),
+  payload: text("payload").notNull(), // JSON-serialized application data
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export type InsertJobQueue = z.infer<typeof insertJobQueueSchema>;
 export type JobQueue = typeof jobQueue.$inferSelect;
+export type ApplicationPayload = typeof applicationPayloads.$inferSelect;
+export type InsertApplicationPayload = typeof applicationPayloads.$inferInsert;
 
 // User Profile schema with additional fields required by the Profile Management feature
 export const userProfiles = pgTable("user_profiles", {

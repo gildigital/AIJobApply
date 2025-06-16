@@ -18,6 +18,7 @@ import { cleanupJobLinks } from '../utils/cleanup-job-links.js';
 import { JobQueue, JobTracker, User, jobQueue } from "@shared/schema.js";
 import { db } from "../db.js";
 import { eq } from "drizzle-orm";
+import { processQueuedApplication } from "./job-application-queue.js";
 
 // 🎯 INTELLIGENT WORK MANAGEMENT CONFIGURATION
 const WORK_COORDINATOR_INTERVAL_MS = 10 * 60 * 1000; // Check every 10 minutes (was 10 seconds!)
@@ -481,147 +482,95 @@ async function checkAndReactivateStandbyJobs(): Promise<void> {
  */
 async function processJob(queuedJob: JobQueue): Promise<void> {
   try {
-    // Mark job as processing
+    // Check if this is an application submission job (high priority)
+    if (queuedJob.priority >= 100) {
+      console.log(`[Work Manager] 🎯 Processing high-priority application job ${queuedJob.id}`);
+      
+      // Process this as an application submission
+      const result = await processQueuedApplication(queuedJob.id);
+      
+      if (result === 'success') {
+        console.log(`[Work Manager] ✅ Application job ${queuedJob.id} completed successfully`);
+      } else if (result === 'skipped') {
+        console.log(`[Work Manager] ⏭️ Application job ${queuedJob.id} was skipped`);
+      } else {
+        console.log(`[Work Manager] ❌ Application job ${queuedJob.id} failed`);
+      }
+      
+      return;
+    }
+    
+    // Mark job as processing for regular jobs
     await storage.updateQueuedJob(queuedJob.id, {
-      status: "processing",
-      attemptCount: queuedJob.attemptCount + 1,
+      status: 'processing',
+      updatedAt: new Date()
     });
 
-    // Get user and job details
-    const user = await storage.getUser(queuedJob.userId);
-    const job = await storage.getJob(queuedJob.jobId);
-
-    if (!user || !job) {
+    // Get the job details from job_tracker
+    const jobDetails = await storage.getJob(queuedJob.jobId);
+    if (!jobDetails) {
       await storage.updateQueuedJob(queuedJob.id, {
-        status: "failed",
-        error: "User or job not found",
-      });
-      return;
-    }
-
-    if (!user.isAutoApplyEnabled) {
-      await storage.updateQueuedJob(queuedJob.id, {
-        status: "skipped",
-        error: "Auto-apply is disabled for this user.",
+        status: 'failed',
+        error: 'Job details not found',
         processedAt: new Date(),
+        updatedAt: new Date()
       });
-      // TODO: Track statistics for "Skipped" status instead of logging to auto_apply_logs table
-      // await createAutoApplyLog({
-      //   userId: user.id,
-      //   jobId: job.id,
-      //   status: "Skipped",
-      //   message: "Job skipped because auto-apply is disabled for this user.",
-      // });
       return;
     }
 
-    // Check daily limits
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    const appliedToday = await storage.getJobsAppliedToday(user.id, today);
-    const userPlan = user.subscriptionPlan || "FREE";
-    const userDailyLimit =
-      DAILY_LIMITS[userPlan as keyof typeof DAILY_LIMITS] || DAILY_LIMITS.FREE;
-
-    if (appliedToday >= userDailyLimit) {
-      // Instead of marking as failed, put in standby mode
+    // Get user details
+    const user = await storage.getUser(queuedJob.userId);
+    if (!user) {
       await storage.updateQueuedJob(queuedJob.id, {
-        status: "standby", // New status for jobs waiting for limit reset
-        error: "Daily application limit reached, will resume after midnight",
+        status: 'failed',
+        error: 'User not found',
+        processedAt: new Date(),
+        updatedAt: new Date()
       });
-
-      // TODO: Track statistics for "Standby" status instead of logging to auto_apply_logs table
-      // await createAutoApplyLog({
-      //   userId: user.id,
-      //   jobId: job.id,
-      //   status: "Standby",
-      //   message: `Job queued in standby mode. Daily limit of ${userDailyLimit} applications reached. Will resume after midnight reset.`,
-      // });
-
       return;
     }
 
-    // Convert job tracker record to JobListing format
+    // Process the job using the existing auto-apply service
+    // This is for regular job processing (not high-priority application submissions)
     const jobListing: JobListing = {
-      jobTitle: job.jobTitle,
-      company: job.company,
-      description: job.notes || "",
-      applyUrl: job.link || "",
-      location: "", // Job tracker doesn't store location directly
-      source: job.source ? job.source : "",
-      externalJobId: job.externalJobId ? job.externalJobId : "",
+      jobTitle: jobDetails.jobTitle,
+      company: jobDetails.company,
+      description: jobDetails.notes || '',
+      applyUrl: jobDetails.link || '',
+      location: '',
+      source: jobDetails.source || 'workable',
+      externalJobId: jobDetails.externalJobId || '',
+      matchScore: jobDetails.matchScore || 0
     };
 
-    // Add match score if available (explicit handling with type casting for better compatibility)
-    if (job.matchScore !== null && job.matchScore !== undefined) {
-      jobListing.matchScore = job.matchScore;
-    }
-
-    // Submit the application to the Playwright worker
     const result = await submitApplication(user, jobListing);
 
-    // Update job status based on result
-    if (result === "success") {
-      await storage.updateJob(job.id, {
-        status: "applied",
-        applicationStatus: "applied",
-        appliedAt: new Date(),
-      });
-
-      await storage.updateQueuedJob(queuedJob.id, {
-        status: "completed",
-        processedAt: new Date(),
-      });
-
-      await createAutoApplyLog({
-        userId: user.id,
-        jobId: job.id,
-        status: "Applied",
-        message: "Successfully applied to job via Playwright worker",
-      });
-    } else {
-      const errorMessage =
-        result === "skipped"
-          ? "Application skipped by Playwright worker - form not compatible or already applied"
-          : "Error applying to job via Playwright worker";
-
-      // TODO: Track statistics for non-Applied job results instead of updating job_tracker table
-      // Consider implementing a separate analytics system for:
-      // - Skipped applications (incompatible forms, already applied)
-      // - Failed applications (network errors, service issues)
-      // console.log(`Job ${result} for job ID ${job.id}: ${errorMessage}`);
-
-      await storage.updateQueuedJob(queuedJob.id, {
-        status: result === "skipped" ? "skipped" : "failed", // Use proper status in queue
-        error: errorMessage,
-        processedAt: new Date(),
-      });
-
-      // TODO: Track statistics for non-Applied status instead of logging to auto_apply_logs table
-      // await createAutoApplyLog({
-      //   userId: user.id,
-      //   jobId: job.id,
-      //   status: result === "skipped" ? "Skipped" : "Failed",
-      //   message: errorMessage,
-      // });
-    }
-
-    // Apply throttling delay between jobs
-    const delayMs =
-      APPLY_DELAY_MS[userPlan as keyof typeof APPLY_DELAY_MS] ||
-      APPLY_DELAY_MS.FREE;
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-  } catch (error) {
-    console.error(
-      `[Auto-Apply Worker] Error processing job ${queuedJob.id}:`,
-      error
-    );
-
-    // Update job status to failed
+    // Update queue job status
     await storage.updateQueuedJob(queuedJob.id, {
-      status: "failed",
+      status: result === 'success' ? 'completed' : 
+              result === 'skipped' ? 'skipped' : 'failed',
+      error: result === 'error' ? 'Application submission failed' : undefined,
+      processedAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    // Update job tracker
+    await storage.updateJob(queuedJob.jobId, {
+      applicationStatus: result === 'success' ? 'applied' : 
+                        result === 'skipped' ? 'skipped' : 'failed',
+      appliedAt: result === 'success' ? new Date() : undefined,
+      submittedAt: new Date()
+    });
+
+  } catch (error) {
+    console.error(`[Work Manager] Error processing job ${queuedJob.id}:`, error);
+    
+    // Update job as failed
+    await storage.updateQueuedJob(queuedJob.id, {
+      status: 'failed',
       error: error instanceof Error ? error.message : String(error),
       processedAt: new Date(),
+      updatedAt: new Date()
     });
   }
 }

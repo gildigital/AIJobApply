@@ -15,6 +15,7 @@ import {
   generateCoverLetter as generateAICoverLetter,
   selectBestOptionWithAI,
 } from "../utils/application-ai-service.js";
+import { queueJobApplication, type JobApplicationPayload } from "./job-application-queue.js";
 
 /**
  * Submit a job application to Workable using the schema-driven approach
@@ -85,14 +86,17 @@ interface UserProfile extends BaseUserProfile {
 }
 
 /**
- * Submit a job application to Workable using the schema-driven approach
+ * Submit a job application to Workable using the async queue pattern
+ * 
+ * This function has been redesigned to eliminate the catastrophic timeout errors
+ * by queuing the job for asynchronous processing instead of waiting synchronously.
  *
  * @param user The user submitting the application
  * @param resume The user's resume (if available)
  * @param profile The user's profile (if available)
  * @param job The Workable job to apply to
  * @param matchScore The calculated match score
- * @returns Result of the application attempt
+ * @returns Result of the application queueing attempt
  */
 export async function submitWorkableApplication(
   user: User,
@@ -101,12 +105,9 @@ export async function submitWorkableApplication(
   job: JobListing,
   matchScore: number,
 ): Promise<"success" | "skipped" | "error"> {
-  // console.log(`⏳ Starting application submission process for ${job.jobTitle} at ${job.company}...`);
+  console.log(`⏳ Starting async application submission process for ${job.jobTitle} at ${job.company}...`);
+  
   try {
-    // console.log(
-      // `Processing Workable application using schema-driven approach for ${job.jobTitle} at ${job.company}`,
-    // );
-
     // Check if we have a worker URL configured
     const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
     if (!workerUrl) {
@@ -114,1019 +115,344 @@ export async function submitWorkableApplication(
       return "error";
     }
 
-    // Make sure the URL includes the protocol
-    const completeWorkerUrl = workerUrl.startsWith("http")
-      ? workerUrl
-      : `https://${workerUrl}`;
-
-    // Phase 1: Introspection - Get the schema of the form
-    // console.log(`Phase 1: Introspecting form structure for: ${job.applyUrl}`);
+    // Phase 1: Introspection - Get the schema of the form (still synchronous for now)
+    console.log(`Phase 1: Introspecting form structure for: ${job.applyUrl}`);
     const rawFormSchema = await workableScraper.introspectJobForm(job.applyUrl);
 
     // Handle the new nested structure
     let fields = null;
-
-    // Case 1: New structure with nested formSchema
-    if (
-      rawFormSchema?.formSchema?.fields &&
-      Array.isArray(rawFormSchema.formSchema.fields)
-    ) {
-      fields = rawFormSchema.formSchema.fields;
-      // console.log(
-        // `Using new nested formSchema structure with ${fields.length} fields`,
-      // );
-    }
-    // Case 2: Legacy structure with direct fields array
-    else if (rawFormSchema?.fields && Array.isArray(rawFormSchema.fields)) {
+    if (rawFormSchema && typeof rawFormSchema === 'object' && 'fields' in rawFormSchema) {
       fields = rawFormSchema.fields;
-      // console.log(
-        // `Using legacy formSchema structure with ${fields.length} fields`,
-      // );
-    }
-
-    // Validate we have fields
-    if (!fields || fields.length === 0) {
-      console.error("Form introspection failed or returned no fields");
-      return "skipped";
-    }
-
-    // Create a standardized formSchema for the rest of the function
-    const formSchema = {
-      fields: fields,
-      status: "success",
-    };
-
-    // console.log(
-      // `Introspection successful: Found ${formSchema.fields.length} form fields`,
-    // );
-
-    // Phase 2: Prepare data and submit application
-    // console.log(`Phase 2: Preparing form data for submission`);
-
-    // Prepare the formData object based on the introspected schema
-    const formData: Record<string, any> = {};
-
-    // First, analyze what fields are required
-    const requiredFields = formSchema.fields.filter(
-      (field: any) => field.required,
-    );
-    // console.log(
-      // `Found ${requiredFields.length} required fields out of ${formSchema.fields.length} total fields`,
-    // );
-
-    // Helper to check if we'll be able to satisfy the required fields
-    const canSatisfyRequiredFields = requiredFields.every((field: any) => {
-      const fieldNameLower = (field.name || field.id || "").toLowerCase();
-      const fieldLabelLower = (field.label || "").toLowerCase();
-
-      // For checkboxes, we can set to true
-      if (field.type === "checkbox" && field.required) {
-        return true;
-      }
-
-      // For file type fields, we need a resume
-      if (field.type === "file") {
-        const isResumeField =
-          fieldNameLower.includes("resume") ||
-          fieldNameLower.includes("cv") ||
-          fieldLabelLower.includes("resume") ||
-          fieldLabelLower.includes("cv");
-        if (isResumeField) {
-          if (!resume || !resume.fileData) {
-            // console.log(
-              // `Missing required resume file for field: ${field.name} (${field.label || "no label"})`,
-            // );
-            return false;
-          }
-          return true;
-        }
-        // console.log(
-          // `Unknown file field type required: ${field.name} (${field.label || "no label"}) - will try to proceed anyway`,
-        // );
-        return true;
-      }
-
-      // For basic fields like name/email
-      if (field.required) {
-        if (
-          (fieldNameLower.includes("email") ||
-            fieldLabelLower.includes("email")) &&
-          !user.email
-        ) {
-          // console.log(`Missing required email field: ${field.name}`);
-          return false;
-        }
-        if (
-          (fieldNameLower.includes("name") ||
-            fieldLabelLower.includes("name")) &&
-          !user.name &&
-          !user.firstName &&
-          !user.lastName &&
-          !(profile && profile.fullName)
-        ) {
-          // console.log(`Missing required name field: ${field.name}`);
-          return false;
-        }
-        // For other text/textarea/radio/select fields, we can use LLM
-        if (["text", "textarea", "radio", "select"].includes(field.type)) {
-          return true;
-        }
-      }
-
-      return true;
-    });
-
-    if (!canSatisfyRequiredFields) {
-      // console.log("Cannot satisfy all required fields, skipping application");
-      return "skipped";
-    }
-
-    // Define basic fields that can be mapped directly from user/profile
-    const basicFieldMappings: Record<
-      string,
-      {
-        keys: string[];
-        value: (user: User, profile: UserProfile | undefined) => string;
-      }
-    > = {
-      firstname: {
-        keys: ["first_name", "firstname", "first name"],
-        value: (user, profile) =>
-          user.firstName ||
-          (profile?.fullName ? profile.fullName.split(" ")[0] : ""),
-      },
-      lastname: {
-        keys: ["last_name", "lastname", "last name"],
-        value: (user, profile) =>
-          user.lastName ||
-          (profile?.fullName
-            ? profile.fullName.split(" ").slice(1).join(" ")
-            : ""),
-      },
-      fullname: {
-        keys: ["full_name", "fullname", "full name"],
-        value: (user, profile) => profile?.fullName || user.name || "",
-      },
-      email: {
-        keys: ["email"],
-        value: (user, profile) => profile?.email || user.email || "",
-      },
-      phone: {
-        keys: ["phone", "mobile"],
-        value: (user, profile) => profile?.phoneNumber || user.phone || "",
-      },
-      address: {
-        keys: ["address"],
-        value: (user, profile) => profile?.address || "",
-      },
-      city: {
-        keys: ["city"],
-        value: (user, profile) => profile?.city || "",
-      },
-      state: {
-        keys: ["state"],
-        value: (user, profile) => profile?.state || "",
-      },
-      zip: {
-        keys: ["zip", "postal"],
-        value: (user, profile) => profile?.zipCode || "",
-      },
-      linkedin: {
-        keys: ["linkedin"],
-        value: (user, profile) => profile?.linkedinProfile || "",
-      },
-      website: {
-        keys: ["website", "personal website"],
-        value: (user, profile) => profile?.personalWebsite || "",
-      },
-      github: {
-        keys: ["github"],
-        value: (user, profile) => profile?.githubProfile || "",
-      },
-      portfolio: {
-        keys: ["portfolio"],
-        value: (user, profile) => profile?.portfolioLink || "",
-      },
-    };
-
-    // Now map all introspected fields to formData
-    for (const field of formSchema.fields) {
-      const fieldName =
-        field.name ||
-        field.id ||
-        `field_${Math.random().toString(36).substring(2, 10)}`;
-      const fieldType = field.type || "text";
-      const fieldLabel = field.label || "";
-      const fieldNameLower = (
-        typeof fieldName === "string" ? fieldName : ""
-      ).toLowerCase();
-      const fieldLabelLower = fieldLabel.toLowerCase();
-      
-      // Store the selector in formData for the Playwright worker to use
-      // This is crucial for reliable field location during submission phase
-      if (field.selector) {
-        formData[`${fieldName}_selector`] = field.selector;
-        // console.log(`Storing selector for field "${fieldName}": ${field.selector}`);
-      }
-
-      // console.log(
-        // `Processing field: ${fieldName} (type: ${fieldType}, label: ${fieldLabel}, required: ${field.required})`,
-      // );
-
-      // Handle required checkboxes (e.g., GDPR)
-      if (fieldType === "checkbox" && field.required) {
-        formData[fieldName] = true;
-        // console.log(`Mapped "${fieldName}" to true (required checkbox)`);
-        continue;
-      }
-
-      // Handle file fields (e.g., resume)
-      if (fieldType === "file") {
-        if (
-          fieldNameLower.includes("resume") ||
-          fieldNameLower.includes("cv") ||
-          fieldLabelLower.includes("resume") ||
-          fieldLabelLower.includes("cv")
-        ) {
-          if (resume && resume.fileData) {
-            formData[fieldName] = resume.fileData;
-            // console.log(`Mapped "${fieldName}" to resume file data`);
-          } else {
-            console.warn(`No resume data available for "${fieldName}"`);
-          }
-        } else {
-          // console.log(
-            // `Skipping non-resume file field: ${fieldName} (${fieldLabel})`,
-          // );
-        }
-        continue;
-      }
-
-      // Special handling for known problematic QA fields in GOVX application
-      if (fieldName === 'QA_9822728' || fieldName === 'QA_9822729') {
-        // console.log(`🔍 Special handling for known problematic field "${fieldName}"`);
-        // These fields have SVG issues with "Personal information" labels
-        // For these fields, we select the first option to get past required field validation
-        if (field.options && field.options.length > 0) {
-          // Always use the first option for these fields
-          formData[fieldName] = field.options[0].value;
-          // console.log(`✅ Mapped problematic SVG field "${fieldName}" to first option "${field.options[0].value}"`);
-          
-          // Add extra context for the playwright worker to help with radio selection
-          formData[`${fieldName}_questcontext`] = "Personal information radio field, force select first option";
-          continue;
-        }
-      }
-      
-      // Special handling for work authorization field (QA_9822727)
-      if (fieldName === 'QA_9822727' || (fieldLabelLower.includes('authorized') && fieldLabelLower.includes('work'))) {
-        // console.log(`🔍 Special handling for work authorization field "${fieldName}"`);
-        // For this field, we need to get the first option's value for "Yes" rather than hardcoding "CA"
-        if (field.options && field.options.length > 0) {
-          // Find the "yes" or "authorized" option
-          interface FieldOption {
-            label: string;
-            value: string;
-          }
-
-          const yesOption: FieldOption | undefined = (field.options as FieldOption[]).find((opt: FieldOption) => 
-            (opt.label && (
-              opt.label.toLowerCase().includes('yes') || 
-              opt.label.toLowerCase().includes('authorized') ||
-              opt.label.toLowerCase().includes('eligible')
-            ))
-          );
-          
-          if (yesOption) {
-            formData[fieldName] = yesOption.value;
-            // Add extra context for the playwright worker to help with radio selection
-            formData[`${fieldName}_questcontext`] = "Work authorization field, select 'Yes' option";
-            // console.log(`✅ Mapped work auth field "${fieldName}" to "${yesOption.value}" (option: "${yesOption.label}")`);
-            continue;
-          } else {
-            // If we can't find a specific "yes" option, use the first option as fallback
-            formData[fieldName] = field.options[0].value;
-            // Add extra context for the playwright worker to help with radio selection
-            formData[`${fieldName}_questcontext`] = "Work authorization field, select first option";
-            // console.log(`✅ Mapped work auth field "${fieldName}" to first option "${field.options[0].value}" (fallback)`);
-            continue;
-          }
-        } else {
-          // If no options available, we should set a non-location value
-          formData[fieldName] = "Yes";
-          // console.log(`✅ Mapped work auth field "${fieldName}" to "Yes" (no options available)`);
-          continue;
-        }
-      }
-      
-      // Check if it's a basic field
-      let isBasicField = false;
-      for (const [key, mapping] of Object.entries(basicFieldMappings)) {
-        if (
-          mapping.keys.some(
-            (k) => fieldNameLower.includes(k) || fieldLabelLower.includes(k),
-          )
-        ) {
-          const value = mapping.value(user, profile);
-          if (value) {
-            formData[fieldName] = value;
-            // console.log(`Mapped "${fieldName}" to "${value}" (basic field)`);
-            isBasicField = true;
-          } else {
-            console.warn(`No value available for basic field "${fieldName}"`);
-          }
-          break;
-        }
-      }
-      if (isBasicField) continue;
-
-      // Handle cover letter fields
-      if (
-        fieldType === "textarea" &&
-        (fieldNameLower.includes("cover") ||
-          fieldNameLower.includes("motivation") ||
-          fieldLabelLower.includes("cover letter") ||
-          fieldLabelLower.includes("motivation"))
-      ) {
-        try {
-          const coverLetter = await generateCoverLetter(
-            user,
-            profile,
-            job,
-            matchScore,
-          );
-          formData[fieldName] = coverLetter;
-          // console.log(`Mapped "${fieldName}" to generated cover letter`);
-        } catch (error) {
-          console.error(
-            `Error generating cover letter for "${fieldName}":`,
-            error,
-          );
-          console.warn(
-            `Skipping "${fieldName}" due to cover letter generation failure`,
-          );
-        }
-        continue;
-      }
-
-      // Handle radio/select fields with options
-      if (
-        (fieldType === "radio" || fieldType === "select") &&
-        field.options &&
-        field.options.length > 0
-      ) {
-        try {
-          // Check if this is a QA_* pattern field with context data
-          const isQAPattern = fieldName && /^QA_\d+$/.test(fieldName);
-          const hasQAContext = isQAPattern && field.isQAPattern && field.qaContext;
-          
-          if (isQAPattern) {
-            if (hasQAContext) {
-              // console.log(`Processing QA_* pattern radio/select field "${fieldName}" with enhanced context`);
-            } else {
-              // console.log(`Processing QA_* pattern radio/select field "${fieldName}" without enhanced context`);
-            }
-          }
-          
-          // For QA_* pattern fields, enhance the label with context data
-          let enhancedLabel = fieldLabel;
-          
-          if (hasQAContext) {
-            const contextParts = [];
-            
-            // Special handling for SVG issues
-            if (field.qaContext.hasSvgProblem) {
-              // console.log(`⚠️ Field ${fieldName} has SVG label problem - using enhanced context`);
-            }
-            
-            // Use more reliable context sources first in QA_* fields
-            
-            // Special alternative label for SVG problems
-            if (field.qaContext.alternativeLabel) {
-              contextParts.push(`Question from nearby label: ${field.qaContext.alternativeLabel}`);
-            }
-            
-            // Question from fieldset
-            if (field.qaContext.fieldsetQuestion) {
-              contextParts.push(`Question from parent element: ${field.qaContext.fieldsetQuestion}`);
-            }
-            
-            // Question from specialized question-text spans  
-            if (field.qaContext.questionText) {
-              contextParts.push(`Question: ${field.qaContext.questionText}`);
-            }
-            
-            // Work authorization special handling
-            if (field.qaContext.isWorkAuth) {
-              contextParts.push("This appears to be a work authorization question asking if the candidate is legally authorized to work.");
-            }
-            
-            // Add any section headings for overall context
-            if (field.qaContext.sectionHeadings && field.qaContext.sectionHeadings.length > 0) {
-              contextParts.push(`Section: ${field.qaContext.sectionHeadings[0]}`);
-            }
-            
-            // Add sibling text that might contain question context
-            if (field.qaContext.siblingText && field.qaContext.siblingText.length > 0) {
-              contextParts.push(`Question context: ${field.qaContext.siblingText.join(' ')}`);
-            }
-            
-            // Add any other labels found
-            if (field.qaContext.parentLabel) {
-              contextParts.push(`Related label: ${field.qaContext.parentLabel}`);
-            }
-            
-            if (field.qaContext.ariaLabel || field.qaContext.idLabel || field.qaContext.siblingLabel) {
-              const otherLabels = [field.qaContext.ariaLabel, field.qaContext.idLabel, field.qaContext.siblingLabel].filter(l => l).join(', ');
-              if (otherLabels) {
-                contextParts.push(`Additional context: ${otherLabels}`);
-              }
-            }
-            
-            // If we have any contextual data, enhance the label
-            if (contextParts.length > 0) {
-              enhancedLabel = `${contextParts.join('\n')}\n\nOriginal question field text: ${fieldLabel}`;
-              // console.log(`Enhanced label for QA_* radio/select field: ${enhancedLabel}`);
-            }
-          }
-          
-          // console.log(
-            // `Using AI to select best option for "${fieldName}" (${enhancedLabel})`,
-          // );
-          const resumeText = user.resumeText || "";
-          const bestOptionIndex = await selectBestOptionWithAI(
-            enhancedLabel,
-            field.options,
-            resumeText,
-            profile || {},
-            job.description,
-            fieldName,
-            hasQAContext ? field.qaContext : undefined,
-            user.subscriptionPlan || "FREE"
-          );
-          formData[fieldName] = field.options[bestOptionIndex].value;
-          // console.log(
-            // `Mapped "${fieldName}" to option ${bestOptionIndex + 1}: "${formData[fieldName]}"`,
-          // );
-        } catch (error) {
-          console.error(`Error selecting option for "${fieldName}":`, error);
-          formData[fieldName] = field.options[0].value;
-          // console.log(
-            // `Mapped "${fieldName}" to first option (fallback): "${formData[fieldName]}"`,
-          // );
-        }
-        continue;
-      }
-
-      // Handle text/textarea fields (e.g., QA_ questions)
-      if (fieldType === "text" || fieldType === "textarea") {
-        try {
-          // Check if this is a QA_* pattern field with context data
-          const isQAPattern = fieldName && /^QA_\d+$/.test(fieldName);
-          const hasQAContext = isQAPattern && field.isQAPattern && field.qaContext;
-          
-          if (isQAPattern) {
-            if (hasQAContext) {
-              // console.log(`Processing QA_* pattern field "${fieldName}" with enhanced context`);
-            } else {
-              // console.log(`Processing QA_* pattern field "${fieldName}" without enhanced context`);
-            }
-          }
-          
-          const answer = await generateApplicationAnswer(
-            fieldLabel,
-            fieldName,
-            user.resumeText || "",
-            profile || {},
-            job.description,
-            hasQAContext ? field.qaContext : undefined,
-            user.subscriptionPlan || "FREE"
-          );
-          
-          if (answer) {
-            formData[fieldName] = answer;
-            // console.log(
-              // `Mapped "${fieldName}" to LLM-generated answer: "${answer.substring(0, 50)}..."`,
-            // );
-          } else {
-            console.warn(
-              `LLM returned no answer for "${fieldName}" (${fieldLabel})`,
-            );
-            formData[fieldName] =
-              `I am well-suited for the ${job.jobTitle} role at ${job.company} and would be happy to discuss this further.`;
-            // console.log(`Mapped "${fieldName}" to fallback answer`);
-          }
-        } catch (error) {
-          console.error(
-            `Error generating LLM answer for "${fieldName}":`,
-            error,
-          );
-          formData[fieldName] =
-            `I am well-suited for the ${job.jobTitle} role at ${job.company} and would be happy to discuss this further.`;
-          // console.log(`Mapped "${fieldName}" to fallback answer (error)`);
-        }
-        continue;
-      }
-
-      // console.log(
-        // `Skipping unmapped field: ${fieldName} (type: ${fieldType}, label: ${fieldLabel})`,
-      // );
-    }
-
-    // Add resume metadata for the Playwright worker
-    if (resume && resume.fileData) {
-      formData.resume = resume.fileData;
-      formData.resumeFilePath = "__BASE64_ENCODED__";
-      formData.resumeContentType = "application/pdf";
-      formData.resumeFilename = resume.filename || "resume.pdf";
-      formData.isResumeBase64 = true;
-      // console.log(`Added resume metadata to formData`);
-    }
-
-    // Validate before submission: Ensure all required fields have values
-    const requiredFieldsMissing: string[] = [];
-    
-    // Check all required fields
-    for (const field of formSchema.fields) {
-      // Skip file type fields as they're handled separately
-      if (field.type === 'file') continue;
-      
-      // Get the field name
-      const fieldName = field.name || field.id || '';
-      
-      // Check if field is required and missing in formData
-      if (field.required && 
-          (formData[fieldName] === undefined || 
-           formData[fieldName] === null || 
-           formData[fieldName] === '')) {
-        requiredFieldsMissing.push(`${fieldName} (${field.label || 'no label'})`);
-      }
-    }
-    
-    // Check if any required fields are missing
-    if (requiredFieldsMissing.length > 0) {
-      console.error(`Validation failed: Missing values for required fields: ${requiredFieldsMissing.join(', ')}`);
-      const missingFieldsError = `Missing values for required fields: ${requiredFieldsMissing.join(', ')}`;
-      throw new Error(missingFieldsError);
-    }
-    
-    // console.log("✅ Pre-submission validation passed: All required fields have values");
-    
-    // Filter out selector fields from form data before submission
-    // These are just helper fields used for targeting elements, not actual form fields
-    const filteredFormData = Object.entries(formData).reduce((acc, [key, value]) => {
-      // Skip any keys ending with "_selector" since they're only for targeting elements, not submission data
-      if (!key.endsWith('_selector')) {
-        acc[key] = value;
-      }
-      return acc;
-    }, {} as Record<string, any>);
-    
-    // console.log(`Filtered out ${Object.keys(formData).length - Object.keys(filteredFormData).length} selector metadata fields from form submission`);
-    
-    // Prepare the payload to submit to the Playwright worker's /submit endpoint
-    const payload = {
-      job: {
-        applyUrl: job.applyUrl,
-      },
-      formData: filteredFormData,
-    };
-
-    // Log form data for debugging (excluding resume data which is too large)
-    const formDataForLogging = JSON.parse(JSON.stringify(formData));
-    if (formDataForLogging.resume) {
-      formDataForLogging.resume = "[RESUME DATA TRUNCATED]";
-    }
-    if (
-      formDataForLogging.resumeFilePath &&
-      typeof formDataForLogging.resumeFilePath === "string" &&
-      formDataForLogging.resumeFilePath.startsWith("base64://")
-    ) {
-      formDataForLogging.resumeFilePath = "[BASE64 RESUME DATA TRUNCATED]";
-    }
-    Object.keys(formDataForLogging).forEach((key) => {
-      if (typeof formDataForLogging[key] === "string") {
-        if (
-          formDataForLogging[key].length > 1000 &&
-          formDataForLogging[key].includes("JVBERi0")
-        ) {
-          formDataForLogging[key] =
-            `[LARGE BASE64 PDF DATA (${formDataForLogging[key].length} chars) TRUNCATED]`;
-        } else if (formDataForLogging[key].length > 1000) {
-          formDataForLogging[key] =
-            `[LARGE STRING DATA (${formDataForLogging[key].length} chars) TRUNCATED]`;
-        }
-      } else if (
-        formDataForLogging[key] &&
-        typeof formDataForLogging[key] === "object"
-      ) {
-        Object.keys(formDataForLogging[key]).forEach((nestedKey) => {
-          if (
-            typeof formDataForLogging[key][nestedKey] === "string" &&
-            formDataForLogging[key][nestedKey].length > 1000
-          ) {
-            formDataForLogging[key][nestedKey] =
-              `[LARGE NESTED DATA (${formDataForLogging[key][nestedKey].length} chars) TRUNCATED]`;
-          }
-        });
-      }
-    });
-
-    // console.log(`Form data for ${job.jobTitle} at ${job.company} (truncated):`);
-    const formDataString = JSON.stringify(formDataForLogging, null, 2);
-    // console.log(
-      // formDataString.length > 2000
-        // ? formDataString.substring(0, 2000) + "... [truncated]"
-        // : formDataString,
-    // );
-
-    // Implement a more robust progression of timeouts
-    const MAX_RETRIES = 3; // Reduce retries but increase timeouts  
-    const TIMEOUT_PROGRESSION = [300000, 480000, 600000]; // 5, 8, 10 minutes - longer for Cloudflare challenges
-    
-    let retryCount = 0;
-    let response = null;
-    let lastError = null;
-    
-    while (retryCount <= MAX_RETRIES) {
-      try {
-        // Get the appropriate timeout for this attempt (use the last one if we're beyond the array)
-        const timeoutMs = TIMEOUT_PROGRESSION[Math.min(retryCount, TIMEOUT_PROGRESSION.length - 1)];
-        // console.log(`Attempt ${retryCount + 1}/${MAX_RETRIES + 1} to submit application to Playwright worker (timeout: ${timeoutMs/1000}s)`);
-        
-        // Use AbortController to implement timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-        
-        response = await fetch(`${completeWorkerUrl}/submit`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-          // Configure undici timeouts to handle long-running requests
-          timeout: timeoutMs,
-          keepalive: true,
-          // Additional timeout configurations for undici
-          headersTimeout: timeoutMs, // Set headers timeout to match our abort timeout
-          bodyTimeout: timeoutMs,    // Set body timeout to match our abort timeout
-        } as any); // Cast to any to avoid TypeScript errors for undici-specific options
-        
-        // Clear timeout if the request completes
-        clearTimeout(timeoutId);
-        
-        // Handle 409 Conflict (duplicate job) as a special case
-        if (response.status === 409) {
-          try {
-            const conflictData = await response.json();
-            // console.log(`⚠️ Job application already in progress: ${conflictData.message}`);
-            // console.log(`⚠️ Existing request ID: ${conflictData.existingRequestId}, elapsed: ${Math.round(conflictData.elapsed/1000)}s`);
-            
-            // Instead of retrying immediately, wait a reasonable time and then try once more
-            if (retryCount === 0) {
-              // console.log(`⏳ Waiting 60 seconds before making final attempt...`);
-              await new Promise(resolve => setTimeout(resolve, 60000));
-              retryCount++; // Skip to final attempt
-              continue;
-            } else {
-              // Wait longer and check actual status instead of assuming success
-              // console.log(`⚠️ Job still in progress. Waiting additional time to check actual completion...`);
-              await new Promise(resolve => setTimeout(resolve, 120000)); // Wait 2 more minutes
-              
-              // Make a final status check to get real results
-              try {
-                // console.log(`Making final status check to verify actual job completion...`);
-                const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
-                  method: "GET",
-                  timeout: 30000, // 30 second timeout for status checks
-                  headersTimeout: 30000,
-                  bodyTimeout: 30000,
-                } as any).catch(() => null);
-                
-                if (statusResponse && statusResponse.ok) {
-                  const status = await statusResponse.json();
-                  // console.log(`Final status check result:`, JSON.stringify(status, null, 2));
-                  
-                  // Check multiple success indicators
-                  const isSuccessful = status && (
-                    status.lastJobSuccessful === true ||
-                    status.lastResult === "success" ||
-                    status.status === "success" ||
-                    (status.lastJob && status.lastJob.status === "success") ||
-                    (status.lastJob && status.lastJob.result === "success")
-                  );
-                  
-                  if (isSuccessful) {
-                    // console.log(`✅ Status check confirms job completed successfully`);
-                    return "success";
-                  } else {
-                    // console.log(`❌ Status check indicates job did not complete successfully`);
-                    // console.log(`❌ Checked flags: lastJobSuccessful=${status.lastJobSuccessful}, lastResult=${status.lastResult}, status=${status.status}`);
-                  }
-                } else {
-                  // console.log(`❌ Status check request failed or returned non-OK status`);
-                }
-              } catch (statusError) {
-                console.error(`Final status check failed:`, statusError);
-              }
-              
-              // Before marking as error, try one more specific check for recent job completions
-              try {
-                // console.log(`Making secondary verification check for job completion...`);
-                const verifyResponse = await fetch(`${completeWorkerUrl}/recent-jobs`, {
-                  method: "GET",
-                  timeout: 30000, // 30 second timeout for verification checks
-                  headersTimeout: 30000,
-                  bodyTimeout: 30000,
-                } as any).catch(() => null);
-                
-                if (verifyResponse && verifyResponse.ok) {
-                  const recentJobs = await verifyResponse.json();
-                  // console.log(`Recent jobs check result:`, JSON.stringify(recentJobs, null, 2));
-                  
-                                     // Look for a recent successful job matching our URL
-                   if (recentJobs && Array.isArray(recentJobs.jobs)) {
-                     const recentSuccess = recentJobs.jobs.find((recentJob: any) => 
-                       recentJob.url === job.applyUrl && 
-                       (recentJob.status === "success" || recentJob.result === "success") &&
-                       (Date.now() - new Date(recentJob.completedAt).getTime()) < 300000 // Within last 5 minutes
-                     );
-                     
-                     if (recentSuccess) {
-                       // console.log(`✅ Found recent successful job completion in recent-jobs endpoint`);
-                       return "success";
-                     }
-                   }
-                }
-              } catch (verifyError) {
-                console.error(`Secondary verification check failed:`, verifyError);
-              }
-              
-              // console.log(`⚠️ Cannot confirm job success after extended wait, marking as error`);
-              return "error"; // Only return error if we can't confirm success
-            }
-          } catch (parseError) {
-            console.error("Error parsing conflict response:", parseError);
-            // Fall through to regular error handling
-          }
-        }
-        
-        // If we got here, the request was successful (no timeout or conflict)
-        // console.log(`✅ Attempt ${retryCount + 1} succeeded! Got response with status: ${response.status}`);
-        break;
-      } catch (error) {
-        lastError = error;
-        retryCount++;
-        
-        // Log the error but don't fail yet if we have retries left
-        console.error(`Fetch attempt ${retryCount}/${MAX_RETRIES + 1} failed with error:`, error);
-        
-        // Check if we've used all retries
-        if (retryCount > MAX_RETRIES) {
-          console.error(`All ${MAX_RETRIES + 1} submission attempts failed, giving up.`);
-          // console.log("IMPORTANT: This may be a false negative - the application might have succeeded but the connection timed out");
-          
-          // When giving up, make a quick status check to see if the job was applied to
-          try {
-            // console.log(`Making a final lightweight status check to verify if the application completed...`);
-            const statusResponse = await fetch(`${completeWorkerUrl}/status`, {
-              method: "GET",
-              timeout: 30000, // 30 second timeout for final status checks
-              headersTimeout: 30000,
-              bodyTimeout: 30000,
-            } as any).catch(() => null);
-            
-            if (statusResponse && statusResponse.ok) {
-              const status = await statusResponse.json();
-              // console.log(`Status check result:`, status);
-              
-              // If the status shows the worker is idle, job might have completed successfully
-              if (status && status.idle && status.lastJobSuccessful) {
-                // console.log(`⚠️ Status check indicates the worker is idle and last job was successful!`);
-                // console.log(`⚠️ Application might have actually succeeded despite the timeout failure`);
-                
-                // Return success to prevent marking the job as failed
-                return "success";
-              }
-            }
-          } catch (statusError) {
-            console.error(`Status check failed:`, statusError);
-          }
-          
-          // If we get here, we have no evidence that the job succeeded
-          throw lastError;
-        }
-        
-        // If the error is a timeout or other network error, retry
-        if ((error as any).name === 'AbortError' || 
-            (error as any).name === 'HeadersTimeoutError' || 
-            (error as any).code === 'UND_ERR_HEADERS_TIMEOUT' ||
-            (error as any).message?.includes('timeout')) {
-          
-          // console.log(`Request timed out or network error, retrying in 5 seconds with a longer timeout...`);
-          
-          // For HeadersTimeoutError specifically, immediately check if the job actually succeeded
-          if ((error as any).code === 'UND_ERR_HEADERS_TIMEOUT' || (error as any).name === 'HeadersTimeoutError') {
-            // console.log(`📞 HeadersTimeoutError detected - checking if job actually succeeded despite timeout...`);
-            try {
-              // Wait a moment for the job to potentially complete
-              await new Promise(resolve => setTimeout(resolve, 10000));
-              
-              const quickStatusResponse = await fetch(`${completeWorkerUrl}/status`, {
-                method: "GET",
-                timeout: 15000,
-                headersTimeout: 15000,
-                bodyTimeout: 15000,
-              } as any).catch(() => null);
-              
-              if (quickStatusResponse && quickStatusResponse.ok) {
-                const quickStatus = await quickStatusResponse.json();
-                // console.log(`📞 Quick status check after HeadersTimeoutError:`, JSON.stringify(quickStatus, null, 2));
-                
-                // Check if the job completed successfully despite the timeout
-                const wasActuallySuccessful = quickStatus && (
-                  quickStatus.lastJobSuccessful === true ||
-                  quickStatus.lastResult === "success" ||
-                  quickStatus.status === "success" ||
-                  (quickStatus.lastJob && quickStatus.lastJob.status === "success") ||
-                  (quickStatus.lastJob && quickStatus.lastJob.result === "success")
-                );
-                
-                if (wasActuallySuccessful) {
-                  // console.log(`🎉 HeadersTimeoutError was a false negative - job actually succeeded!`);
-                  return "success";
-                }
-              }
-            } catch (quickCheckError) {
-              console.error(`📞 Quick status check after HeadersTimeoutError failed:`, quickCheckError);
-            }
-          }
-          
-          // Wait 5 seconds before retrying
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        } else {
-          // For non-timeout errors, just re-throw
-          throw error;
-        }
-      }
-    }
-
-    // Ensure we have a valid response before proceeding
-    if (!response) {
-      console.error("No response received from Playwright worker after all retry attempts");
-      return "error";
-    }
-
-    if (!response.ok) {
-      console.error(
-        `Submission request failed with status: ${response.status}`,
-      );
-      
-      // Check the content type of the response
-      const contentType = response.headers.get('content-type') || '';
-      
-      if (contentType.includes('application/json')) {
-        // Try to parse as JSON
-        try {
-          const errorData = await response.json();
-          console.error("Error details:", errorData);
-          
-          // Include field statistics if available
-          if (errorData.fieldStats) {
-            console.error("Field stats:", errorData.fieldStats);
-          }
-          
-          if (errorData.status === "skipped") {
-            return "skipped";
-          }
-        } catch (parseError) {
-          console.error("Error parsing JSON error response:", parseError);
-        }
-      } else {
-        // Handle HTML or other formats - save the first part of the response for debugging
-        try {
-          const responseText = await response.text();
-          console.error(`Received non-JSON error response (${contentType}). Response preview:`);
-          console.error(responseText.substring(0, 1000) + (responseText.length > 1000 ? '...' : ''));
-          
-          // Log error for reference
-          console.error(`Full error response length: ${responseText.length} characters`);
-          console.error(`Error response preview: ${responseText.substring(0, 500)}...`);
-        } catch (textError) {
-          console.error("Error extracting text from error response:", textError);
-        }
-      }
-      
-      return "error";
-    }
-
-    // Handle JSON or HTML response properly
-    let result;
-    const contentType = response.headers.get('content-type') || '';
-    
-    if (contentType.includes('application/json')) {
-      // Normal JSON response
-      result = await response.json();
-      
-      // Add detailed logging for troubleshooting
-      // console.log(`[WORKABLE-DEBUG] Raw response from Playwright worker: ${JSON.stringify(result)}`);
-      // console.log(`[WORKABLE-DEBUG] Status type: ${typeof result.status}, Value: "${result.status}"`);
-      // console.log(`[WORKABLE-DEBUG] Full response keys: ${Object.keys(result).join(', ')}`);
+    } else if (Array.isArray(rawFormSchema)) {
+      fields = rawFormSchema;
     } else {
-      // Handle HTML or other non-JSON responses (typically 500 errors or redirects)
-      const responseText = await response.text();
-      console.error(`Received non-JSON response (${contentType}). First 500 chars of response:`);
-      console.error(responseText.substring(0, 500) + (responseText.length > 500 ? '...' : ''));
-      
-      // Create a synthetic result object to handle the error
-      result = {
-        status: "fail",
-        error: `Server returned non-JSON response (${response.status} ${response.statusText})`,
-        htmlSnippet: responseText.substring(0, 200) + '...'
+      console.error("Unexpected form schema structure:", rawFormSchema);
+      return "error";
+    }
+
+    if (!fields || !Array.isArray(fields) || fields.length === 0) {
+      console.error("No form fields found during introspection");
+      return "error";
+    }
+
+    console.log(`✅ Form introspection completed. Found ${fields.length} fields`);
+
+    // Phase 2: Data Processing - Prepare the data for the form
+    console.log(`Phase 2: Processing application data...`);
+
+    // Prepare user data
+    const userData = {
+      id: user.id,
+      name: user.name || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      firstName: user.firstName || (user.name ? user.name.split(' ')[0] : ''),
+      lastName: user.lastName || (user.name ? user.name.split(' ').slice(1).join(' ') : ''),
+      resumeText: user.resumeText || ''
+    };
+
+    // Process resume data
+    let resumeData = null;
+    if (resume) {
+      resumeData = {
+        id: resume.id,
+        filename: resume.filename || 'resume.pdf',
+        contentType: resume.contentType || 'application/pdf',
+        fileContent: resume.fileData || resume.fileContent || ''
       };
     }
+
+    // Generate form field mappings using AI
+    const formData = await processFormWithAI(fields, userData, profile, job, matchScore);
     
-    // Check for field status information in the response
-    if (result.fieldStats) {
-      const stats = result.fieldStats;
-      // console.log(`
-// Form Field Processing Statistics:
-// --------------------------------
-// Total fields: ${stats.total}
-// Processed fields: ${stats.processed}
-// Successfully filled: ${stats.successful}
-// Failed to fill: ${stats.failed}
-// Skipped fields: ${stats.skipped}
-// Success rate: ${stats.successRate}%
-      // `);
-      
-      // Log details of any failed fields for debugging and improvement
-      if (result.fieldDetails && stats.failed > 0) {
-        const failedFields = result.fieldDetails.filter((field: any) => field.status === 'failed');
-        console.error(`
-Failed Fields Details:
----------------------
-${failedFields.map((field: any) => 
-  `${field.fieldName} (${field.type}): ${field.reason || 'Unknown reason'}`
-).join('\n')}
-        `);
-      }
-    }
-    
-    // Add detailed logging to investigate the status comparison
-    // console.log(`[WORKABLE-DEBUG] Comparing status: "${result.status}" (${typeof result.status})`);
-    // console.log(`[WORKABLE-DEBUG] Status strict equality check: result.status === "success" = ${result.status === "success"}`);
-    // console.log(`[WORKABLE-DEBUG] Status string check: result.status.toString() === "success" = ${result.status.toString() === "success"}`);
-    // console.log(`[WORKABLE-DEBUG] Status trim check: result.status.trim() === "success" = ${result.status.trim ? result.status.trim() === "success" : "N/A"}`);
-    
-    // Check for additional success indicators
-    // console.log(`[WORKABLE-DEBUG] Additional success flags present: success_flag=${!!result.success_flag}, result=${result.result}`);
-    
-    // Modified condition to check multiple success indicators
-    const isSuccessfulApplication = (
-      result.status === "success" || 
-      result.success_flag === true || 
-      result.result === "success" ||
-      result.applicationSuccessful === true ||
-      (result.message && result.message.toLowerCase().includes('success')) ||
-      (result.details && result.details.toLowerCase().includes('application process completed successfully'))
-    );
-    
-    if (isSuccessfulApplication) {
-      // console.log(
-        // `✅ Application successfully submitted for ${job.jobTitle} at ${job.company}`,
-      // );
-      // console.log(`[WORKABLE-DEBUG] Returning 'success' to auto-apply-service`);
-      return "success";
-    } else if (result.status === "skipped") {
-      // console.log(
-        // `⏭️ Application skipped: ${result.message || "No reason provided"}`,
-      // );
-      // console.log(`[WORKABLE-DEBUG] Returning 'skipped' to auto-apply-service`);
-      return "skipped";
-    } else {
-      console.error(`❌ Unexpected result status: ${result.status}`);
-      console.error(`❌ Full result object: ${JSON.stringify(result, null, 2)}`);
-      // console.log(`[WORKABLE-DEBUG] Returning 'error' to auto-apply-service`);
+    if (!formData) {
+      console.error("Failed to process form data with AI");
       return "error";
     }
-  } catch (error) {
-    console.error(
-      "Error in Workable schema-driven application process:",
-      error,
-    );
-    
-    // Log specific information about field validation failures
-    if (error instanceof Error && error.message.includes('Missing values for required fields')) {
-      console.error('❌ Application failed due to missing required fields');
+
+    console.log(`✅ Application data processing completed`);
+
+    // Phase 3: Queue for Async Processing
+    console.log(`Phase 3: Queueing application for async processing...`);
+
+    const queuePayload: JobApplicationPayload = {
+      user: userData,
+      resume: resumeData,
+      profile,
+      job,
+      matchScore,
+      formData
+    };
+
+    const queueResult = await queueJobApplication(queuePayload);
+
+    if (queueResult.success) {
+      console.log(`✅ Application queued successfully: ${queueResult.message}`);
+      console.log(`📋 Queue ID: ${queueResult.queuedJobId} - Application will be processed asynchronously`);
+      
+      // Return success immediately - the job is now queued for processing
+      // The actual browser automation will happen in the background
+      return "success";
+    } else {
+      console.error(`Failed to queue application: ${queueResult.message}`);
+      return "error";
     }
-    
+
+  } catch (error) {
+    console.error("Error in Workable async application process:", error);
     return "error";
   }
-  
-  // Log end of process marker for easier log parsing
-  // console.log(`📊 Application process for ${job.jobTitle} at ${job.company} completed.`);
+}
+
+/**
+ * Process form fields with AI to generate appropriate responses
+ * 
+ * This function takes the introspected form fields and generates appropriate
+ * values for each field using AI services.
+ */
+async function processFormWithAI(
+  fields: any[],
+  userData: any,
+  profile: UserProfile | undefined,
+  job: JobListing,
+  matchScore: number
+): Promise<any> {
+  try {
+    const formData: Record<string, any> = {};
+    const userPlan = userData.subscriptionPlan || 'FREE';
+
+    for (const field of fields) {
+      const fieldName = field.name || field.id;
+      if (!fieldName) continue;
+
+      // Handle different field types
+      switch (field.type) {
+        case 'text':
+        case 'email':
+        case 'tel':
+          formData[fieldName] = await handleTextFieldWithAI(field, userData, profile, job, userPlan);
+          break;
+          
+        case 'select':
+        case 'radio':
+          formData[fieldName] = await handleSelectFieldWithAI(field, userData, profile, job, userPlan);
+          break;
+          
+        case 'textarea':
+          formData[fieldName] = await handleTextareaFieldWithAI(field, userData, profile, job, userPlan);
+          break;
+          
+        case 'file':
+          // Handle file uploads (resume)
+          if (field.name === 'resume' || field.name === 'cv' || field.name.includes('resume')) {
+            formData[fieldName] = 'resume_upload'; // Placeholder for resume upload
+          }
+          break;
+          
+        case 'checkbox':
+          formData[fieldName] = handleCheckboxField(field);
+          break;
+          
+        default:
+          // Try to infer the field type from the label or name
+          formData[fieldName] = await handleGenericFieldWithAI(field, userData, profile, job, userPlan);
+      }
+    }
+
+    return formData;
+  } catch (error) {
+    console.error('Error processing form with AI:', error);
+    return null;
+  }
+}
+
+/**
+ * Handle text input fields with AI
+ */
+async function handleTextFieldWithAI(
+  field: any,
+  userData: any,
+  profile: UserProfile | undefined,
+  job: JobListing,
+  userPlan: string
+): Promise<string> {
+  const fieldName = field.name || field.id;
+  const label = field.label || field.placeholder || '';
+
+  // Direct mappings for common fields
+  if (fieldName === 'first_name' || fieldName === 'firstName' || label.toLowerCase().includes('first name')) {
+    return userData.firstName || '';
+  }
+  if (fieldName === 'last_name' || fieldName === 'lastName' || label.toLowerCase().includes('last name')) {
+    return userData.lastName || '';
+  }
+  if (fieldName === 'email' || field.type === 'email') {
+    return userData.email || '';
+  }
+  if (fieldName === 'phone' || field.type === 'tel' || label.toLowerCase().includes('phone')) {
+    return userData.phone || '';
+  }
+
+  // For other text fields, use AI to generate appropriate responses
+  if (label) {
+    try {
+      return await generateApplicationAnswer(
+        label,
+        fieldName,
+        userData.resumeText || '',
+        profile || {},
+        job.description,
+        undefined,
+        userPlan
+      );
+    } catch (error) {
+      console.error(`Error generating AI answer for field ${fieldName}:`, error);
+      return '';
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Handle select/dropdown fields with AI
+ */
+async function handleSelectFieldWithAI(
+  field: any,
+  userData: any,
+  profile: UserProfile | undefined,
+  job: JobListing,
+  userPlan: string
+): Promise<string> {
+  const fieldName = field.name || field.id;
+  const label = field.label || '';
+  const options = field.options || [];
+
+  if (options.length === 0) {
+    return '';
+  }
+
+  // If only one option, select it
+  if (options.length === 1) {
+    return options[0].value || options[0];
+  }
+
+  try {
+    const selectedIndex = await selectBestOptionWithAI(
+      label,
+      options,
+      userData.resumeText || '',
+      profile || {},
+      job.description,
+      fieldName,
+      undefined,
+      userPlan
+    );
+    
+    const selectedOption = options[selectedIndex];
+    return selectedOption?.value || selectedOption || '';
+  } catch (error) {
+    console.error(`Error selecting AI option for field ${fieldName}:`, error);
+    return options[0]?.value || options[0] || '';
+  }
+}
+
+/**
+ * Handle textarea fields with AI
+ */
+async function handleTextareaFieldWithAI(
+  field: any,
+  userData: any,
+  profile: UserProfile | undefined,
+  job: JobListing,
+  userPlan: string
+): Promise<string> {
+  const fieldName = field.name || field.id;
+  const label = field.label || field.placeholder || '';
+
+  // Check if this is a cover letter field
+  if (label.toLowerCase().includes('cover letter') || fieldName.toLowerCase().includes('cover')) {
+    try {
+      return await generateCoverLetter(userData, profile, job, 0);
+    } catch (error) {
+      console.error('Error generating cover letter:', error);
+      return '';
+    }
+  }
+
+  // For other textarea fields, use AI to generate longer responses
+  if (label) {
+    try {
+      return await generateApplicationAnswer(
+        label,
+        fieldName,
+        userData.resumeText || '',
+        profile || {},
+        job.description,
+        undefined,
+        userPlan
+      );
+    } catch (error) {
+      console.error(`Error generating AI answer for textarea ${fieldName}:`, error);
+      return '';
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Handle checkbox fields
+ */
+function handleCheckboxField(field: any): boolean {
+  const fieldName = field.name || field.id;
+  const label = field.label || '';
+
+  // Common patterns for checkboxes that should be checked
+  const positivePatterns = [
+    'agree', 'consent', 'accept', 'terms', 'privacy', 'gdpr',
+    'subscribe', 'newsletter', 'updates', 'contact'
+  ];
+
+  const labelLower = label.toLowerCase();
+  const fieldNameLower = fieldName.toLowerCase();
+
+  return positivePatterns.some(pattern => 
+    labelLower.includes(pattern) || fieldNameLower.includes(pattern)
+  );
+}
+
+/**
+ * Handle generic fields with AI
+ */
+async function handleGenericFieldWithAI(
+  field: any,
+  userData: any,
+  profile: UserProfile | undefined,
+  job: JobListing,
+  userPlan: string
+): Promise<any> {
+  const fieldName = field.name || field.id;
+  const label = field.label || field.placeholder || '';
+
+  if (label) {
+    try {
+      return await generateApplicationAnswer(
+        label,
+        fieldName,
+        userData.resumeText || '',
+        profile || {},
+        job.description,
+        undefined,
+        userPlan
+      );
+    } catch (error) {
+      console.error(`Error generating AI answer for generic field ${fieldName}:`, error);
+      return '';
+    }
+  }
+
+  return '';
 }
 
 /**

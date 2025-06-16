@@ -6,7 +6,13 @@ import {
   jobQueue, type JobQueue, type InsertJobQueue,
   userProfiles, type UserProfile, type InsertUserProfile,
   portfolios, type Portfolio, type InsertPortfolio,
-  autoApplyLogs
+  autoApplyLogs,
+  jobLinks,
+  applicationPayloads,
+  type ApplicationPayload,
+  type InsertApplicationPayload,
+  type AutoApplyLog,
+  type InsertAutoApplyLog,
 } from "@shared/schema.js";
 // @ts-ignore - local schema types
 import { jobLinks } from "./local-schema.js";
@@ -82,6 +88,20 @@ export interface IStorage {
   updateJobLink(id: number, data: Partial<JobLinks>): Promise<JobLinks | undefined>;
   markJobLinkAsProcessed(id: number, jobTrackerId?: number): Promise<JobLinks | undefined>;
   getPendingJobLinksCount(userId: number): Promise<number>;
+
+  // Application Payload Methods
+  createApplicationPayload(queuedJobId: number, payload: any): Promise<ApplicationPayload>;
+  getApplicationPayload(queuedJobId: number): Promise<any | undefined>;
+  deleteApplicationPayload(queuedJobId: number): Promise<boolean>;
+
+  // Get job by external ID (for deduplication)
+  getJobByExternalId(externalId: string): Promise<JobTracker | undefined>;
+
+  // Add job to tracker (alias for createJob)
+  addJobToTracker(job: InsertJobTracker): Promise<JobTracker>;
+
+  // Update job in tracker (alias for updateJob)
+  updateJobInTracker(id: number, data: Partial<JobTracker>): Promise<JobTracker | undefined>;
 
   // Session Store
   sessionStore: any;
@@ -418,6 +438,15 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
+  // Get a single queued job by ID
+  async getQueuedJob(id: number): Promise<JobQueue | undefined> {
+    const [job] = await db
+      .select()
+      .from(jobQueue)
+      .where(eq(jobQueue.id, id));
+    return job || undefined;
+  }
+
   // User Profile Methods
   async getUserProfile(userId: number): Promise<UserProfile | undefined> {
     const [profile] = await db
@@ -636,7 +665,7 @@ export class DatabaseStorage implements IStorage {
             eq(jobLinks.status, 'pending'),
             eq(jobLinks.status, 'failed')
           ),
-          gt(jobLinks.priority, 0) // skip any links we’ve demoted
+          gt(jobLinks.priority, 0) // skip any links we've demoted
         )
       )
       .orderBy(
@@ -680,6 +709,62 @@ export class DatabaseStorage implements IStorage {
       );
 
     return result?.count || 0;
+  }
+
+  // Application Payload Methods
+  async createApplicationPayload(queuedJobId: number, payload: any): Promise<ApplicationPayload> {
+    const [newPayload] = await db
+      .insert(applicationPayloads)
+      .values({
+        queuedJobId,
+        payload: JSON.stringify(payload),
+      })
+      .returning();
+    return newPayload;
+  }
+
+  async getApplicationPayload(queuedJobId: number): Promise<any | undefined> {
+    const [result] = await db
+      .select()
+      .from(applicationPayloads)
+      .where(eq(applicationPayloads.queuedJobId, queuedJobId));
+    
+    if (!result) return undefined;
+    
+    try {
+      return JSON.parse(result.payload);
+    } catch (error) {
+      console.error('Error parsing application payload:', error);
+      return undefined;
+    }
+  }
+
+  async deleteApplicationPayload(queuedJobId: number): Promise<boolean> {
+    await db
+      .delete(applicationPayloads)
+      .where(eq(applicationPayloads.queuedJobId, queuedJobId));
+    return true;
+  }
+
+  // Get job by external ID (for deduplication)
+  async getJobByExternalId(externalId: string): Promise<JobTracker | undefined> {
+    if (!externalId) return undefined;
+    
+    const [job] = await db
+      .select()
+      .from(jobTracker)
+      .where(eq(jobTracker.externalJobId, externalId));
+    return job || undefined;
+  }
+
+  // Add job to tracker (alias for createJob)
+  async addJobToTracker(job: InsertJobTracker): Promise<JobTracker> {
+    return await this.createJob(job);
+  }
+
+  // Update job in tracker (alias for updateJob)
+  async updateJobInTracker(id: number, data: Partial<JobTracker>): Promise<JobTracker | undefined> {
+    return await this.updateJob(id, data);
   }
 }
 
