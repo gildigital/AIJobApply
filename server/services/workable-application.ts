@@ -163,7 +163,8 @@ export async function submitWorkableApplication(
       phone: user.phone || '',
       firstName: user.firstName || (user.name ? user.name.split(' ')[0] : ''),
       lastName: user.lastName || (user.name ? user.name.split(' ').slice(1).join(' ') : ''),
-      resumeText: user.resumeText || ''
+      resumeText: user.resumeText || '',
+      subscriptionPlan: user.subscriptionPlan || 'FREE' // Include the user's subscription plan
     };
 
     // Process resume data

@@ -95,6 +95,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
   const path = req.path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
+  const suppressedPaths = ["/api/auto-apply/status", "/api/job-queue/status"]; // Paths to skip logging
 
   // Only patch res.json if it's not an OPTIONS request already handled
   if (req.method !== "OPTIONS") {
@@ -118,7 +119,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     }
 
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
+    if (path.startsWith("/api") && !suppressedPaths.includes(path)) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         try {
