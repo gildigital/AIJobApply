@@ -119,14 +119,29 @@ export async function submitWorkableApplication(
     console.log(`Phase 1: Introspecting form structure for: ${job.applyUrl}`);
     const rawFormSchema = await workableScraper.introspectJobForm(job.applyUrl);
 
-    // Handle the new nested structure
+    // Handle various response formats from the worker
     let fields = null;
-    if (rawFormSchema && typeof rawFormSchema === 'object' && 'fields' in rawFormSchema) {
-      fields = rawFormSchema.fields;
+    if (rawFormSchema && typeof rawFormSchema === 'object') {
+      // Case 1: New nested format { status: "success", formSchema: { status: "success", fields: [...] } }
+      if (rawFormSchema.formSchema?.fields && Array.isArray(rawFormSchema.formSchema.fields)) {
+        fields = rawFormSchema.formSchema.fields;
+      }
+      // Case 2: Direct formSchema with fields { status: "success", fields: [...] }
+      else if (rawFormSchema.fields && Array.isArray(rawFormSchema.fields)) {
+        fields = rawFormSchema.fields;
+      }
+      // Case 3: Legacy direct fields array [...]
+      else if (Array.isArray(rawFormSchema)) {
+        fields = rawFormSchema;
+      }
+      else {
+        console.error("Unexpected form schema structure:", JSON.stringify(rawFormSchema, null, 2));
+        return "error";
+      }
     } else if (Array.isArray(rawFormSchema)) {
       fields = rawFormSchema;
     } else {
-      console.error("Unexpected form schema structure:", rawFormSchema);
+      console.error("Unexpected form schema structure:", JSON.stringify(rawFormSchema, null, 2));
       return "error";
     }
 

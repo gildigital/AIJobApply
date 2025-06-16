@@ -77,12 +77,12 @@ export class WorkableScraper {
   private readonly BASE_URL = "https://jobs.workable.com/search";
   private searchStates: Map<string, SearchState> = new Map();
 
-  // Global rate limiter for all Workable requests
+  // Global rate limiter for all Workable requests - More conservative to avoid 429 errors
   private limiter = new Bottleneck({
-    maxConcurrent: 5, // Maximum 5 concurrent requests
-    minTime: 100, // 100ms between requests
-    reservoir: 100, // 100 requests per minute
-    reservoirRefreshAmount: 100,
+    maxConcurrent: 2, // Reduced to 2 concurrent requests to avoid rate limiting
+    minTime: 2000, // 2 seconds between requests instead of 100ms
+    reservoir: 30, // Reduced from 100 to 30 requests per minute
+    reservoirRefreshAmount: 30,
     reservoirRefreshInterval: 60 * 1000, // Refresh every minute
   });
 
