@@ -711,7 +711,7 @@ export class DatabaseStorage implements IStorage {
       );
 
     return result?.count || 0;
-  },
+  }
 
   async getJobLinksForDebugging(userId: number): Promise<JobLinks[]> {
     return await db

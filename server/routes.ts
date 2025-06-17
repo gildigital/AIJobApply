@@ -1054,6 +1054,108 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ✨ NEW: Callback endpoint for Playwright worker to update job status
+  app.post("/api/worker/update-job-status", async (req, res) => {
+    try {
+      const { queueId, jobId, userId, finalStatus, message } = req.body;
+
+      // Verify shared secret for security (check header first, then body as fallback)
+      const expectedSecret = process.env.WORKER_SHARED_SECRET;
+      const providedSecret = req.headers['x-worker-secret'] || req.body.secret;
+      
+      if (!expectedSecret || providedSecret !== expectedSecret) {
+        console.error("Unauthorized worker callback - invalid secret");
+        return res.status(401).json({ 
+          success: false, 
+          error: "Unauthorized" 
+        });
+      }
+
+      // Validate required fields
+      if (!queueId || !jobId || !userId || !finalStatus) {
+        console.error("Missing required fields in worker callback", { queueId, jobId, userId, finalStatus });
+        return res.status(400).json({ 
+          success: false, 
+          error: "Missing required fields" 
+        });
+      }
+
+      console.log(`📞 Worker callback: Job ${jobId} (Queue ${queueId}) - Final Status: ${finalStatus}`);
+
+      // Update the job queue status
+      const now = new Date();
+      let queueStatus = 'completed';
+      let applicationStatus = 'applied';
+
+      if (finalStatus === 'completed') {
+        queueStatus = 'completed';
+        applicationStatus = 'applied';
+      } else if (finalStatus === 'skipped') {
+        queueStatus = 'skipped';
+        applicationStatus = 'skipped';
+      } else if (finalStatus === 'failed' || finalStatus === 'error') {
+        queueStatus = 'failed';
+        applicationStatus = 'failed';
+      }
+
+      // Update job queue record
+      await storage.updateQueuedJob(queueId, {
+        status: queueStatus as any,
+        error: finalStatus === 'failed' ? message : undefined,
+        processedAt: now,
+        updatedAt: now
+      });
+
+      // Update job tracker record
+      await storage.updateJob(jobId, {
+        status: finalStatus === 'completed' ? 'Applied' : 'Saved', // This is what getJobsAppliedToday counts!
+        applicationStatus: applicationStatus as any,
+        appliedAt: finalStatus === 'completed' ? now : undefined,
+        submittedAt: now,
+        updatedAt: now
+      });
+
+      // If successful, increment daily application count for subscription limits
+      if (finalStatus === 'completed') {
+        // Get user to check current daily count
+        const user = await storage.getUser(userId);
+        if (user) {
+          console.log(`✅ Application submitted successfully for user ${userId} - updating daily limits`);
+          
+          // Get job details for better log message
+          const jobDetails = await storage.getJob(jobId);
+          const jobTitle = jobDetails?.jobTitle || "Unknown Job";
+          const company = jobDetails?.company || "Unknown Company";
+          
+          // Create auto-apply log entry with specific job details
+          const { createAutoApplyLog } = await import("./services/auto-apply-service.js");
+          await createAutoApplyLog({
+            userId,
+            jobId,
+            status: "Applied",
+            message: `Application submitted successfully for ${company} - ${jobTitle}`
+          });
+        }
+      }
+
+      console.log(`✅ Job status updated: Queue ${queueId} -> ${queueStatus}, Job ${jobId} -> ${applicationStatus}`);
+
+      res.json({ 
+        success: true, 
+        message: "Job status updated successfully",
+        queueStatus,
+        applicationStatus
+      });
+
+    } catch (error: any) {
+      console.error("Error in worker callback:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message || "Failed to update job status"
+      });
+    }
+  });
+
   // API endpoint to retrieve application statistics for debugging
   app.get("/api/application-stats", async (req, res) => {
     if (!req.isAuthenticated()) {
@@ -1594,81 +1696,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // 🚨 PLAN-BASED ERROR HANDLING
   // Handle plan restriction errors
   app.use(handlePlanErrors);
-
-  // Worker status update callback endpoint
-  app.post("/api/worker/update-job-status", async (req, res) => {
-    try {
-      // 1. Authenticate the worker with shared secret
-      const sharedSecret = process.env.WORKER_SHARED_SECRET;
-      const requestSecret = req.headers['x-worker-secret'];
-
-      if (!sharedSecret || requestSecret !== sharedSecret) {
-        console.error('Unauthorized worker callback attempt');
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      // 2. Extract status update payload
-      const { 
-        queueId,        // job_queue.id 
-        jobId,          // job_tracker.id
-        userId, 
-        finalStatus,    // 'completed', 'failed', 'skipped'
-        message,
-        applicationUrl,
-        submissionDetails 
-      } = req.body;
-
-      if (!queueId || !finalStatus) {
-        return res.status(400).json({ error: 'Missing required fields: queueId, finalStatus' });
-      }
-
-      console.log(`[Worker Callback] Job ${queueId} final status: ${finalStatus}`);
-
-      // 3. Update the job queue status
-      await storage.updateQueuedJob(queueId, {
-        status: finalStatus,
-        error: finalStatus === 'failed' ? message : null,
-        processedAt: new Date(),
-        updatedAt: new Date()
-      });
-
-      // 4. Update the job tracker if we have a jobId
-      if (jobId) {
-        const applicationStatus = finalStatus === 'completed' ? 'applied' : 
-                                finalStatus === 'skipped' ? 'skipped' : 'failed';
-        
-        await storage.updateJob(jobId, {
-          applicationStatus,
-          appliedAt: finalStatus === 'completed' ? new Date() : undefined,
-          submittedAt: new Date(),
-          notes: message
-        });
-      }
-
-      // 5. Create activity log ONLY for successful completions
-      if (userId && finalStatus === 'completed') {
-        await createAutoApplyLog({
-          userId,
-          jobId,
-          status: 'Applied',
-          message: message || `Application submitted successfully for ${jobId}`
-        });
-      }
-      // Failed and skipped jobs only update queue status - no auto-apply logs
-
-      res.status(200).json({ 
-        success: true, 
-        message: 'Job status updated successfully' 
-      });
-
-    } catch (error: any) {
-      console.error('Error updating job status from worker:', error);
-      res.status(500).json({ 
-        error: 'Failed to update job status',
-        details: error.message 
-      });
-    }
-  });
 
   const httpServer = createServer(app);
   return httpServer;
