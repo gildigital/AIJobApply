@@ -338,13 +338,13 @@ export class WorkableScraper {
     params: WorkableSearchParams = {}
   ): SearchState {
     const urls = this.generateSearchUrls(userProfile, maxPages, params);
-    // console.log(
-      // `Generated ${
-        // urls.length
-      // } search URLs for user profile with workplace preference: ${
-        // params.workplace || "not specified"
-      // }`
-    // );
+    console.log(
+      `🔧 [WorkableScraper] Generated ${
+        urls.length
+      } search URLs for user profile with workplace preference: ${
+        params.workplace || "not specified"
+      }`
+    );
 
     // Convert string URLs to URL objects with priorities
     const searchUrls = urls.map((url, index) => {
@@ -352,6 +352,11 @@ export class WorkableScraper {
       // Priority is inverse to index, so first URLs have higher priority
       const priority = 1 - index / urls.length;
       return { url, priority };
+    });
+
+    console.log(`📋 [WorkableScraper] Search URLs with priorities:`);
+    searchUrls.forEach((urlObj, i) => {
+      console.log(`  ${i + 1}. ${urlObj.url} (priority: ${urlObj.priority.toFixed(2)})`);
     });
 
     return {
@@ -563,11 +568,14 @@ export class WorkableScraper {
 
     if (!profile) {
       // Generate a generic search URL if no profile
+      console.log(`🔧 [WorkableScraper] No profile provided, generating generic search URL`);
       return [this.buildSearchUrl(null, params)];
     }
 
     // Create more varied search queries based on profile
     let jobTitles = profile.jobTitlesOfInterest || [];
+
+    console.log(`👤 [WorkableScraper] Original job titles from profile: ${jobTitles.length > 0 ? jobTitles.join(', ') : 'none'}`);
 
     // If user has no job titles or fewer than 3, add some default ones
     if (jobTitles.length < 3) {
@@ -599,18 +607,20 @@ export class WorkableScraper {
         ...jobTitles,
         ...additionalTitles.slice(0, Math.max(0, 3 - jobTitles.length)),
       ];
+
+      console.log(`🔧 [WorkableScraper] Added default titles, final list: ${jobTitles.join(', ')}`);
     }
 
-    // console.log(`Using job titles for search: ${jobTitles.join(", ")}`);
+    console.log(`🎯 [WorkableScraper] Using job titles for search: ${jobTitles.join(", ")}`);
     const searchQueries = jobTitles.slice(0, 3);
 
     // Start with just the first page for each job title
     // We'll dynamically generate more pages as needed
     for (const jobTitle of searchQueries) {
       // Start with page 1 for each job title
-      // console.log(
-        // `Adding initial search for job title "${jobTitle}" on page 1`
-      // );
+      console.log(
+        `➕ [WorkableScraper] Adding initial search for job title "${jobTitle}" on page 1`
+      );
 
       // Build the base URL with job title and workplace preferences
       const baseUrl = this.buildSearchUrl(profile, {
@@ -627,11 +637,11 @@ export class WorkableScraper {
         Array.isArray(profile.jobExperienceLevel) &&
         profile.jobExperienceLevel.length > 0
       ) {
-        // console.log(
-          // `User has specified job experience levels: ${profile.jobExperienceLevel.join(
-            // ", "
-          // )}`
-        // );
+        console.log(
+          `📊 [WorkableScraper] User has specified job experience levels: ${profile.jobExperienceLevel.join(
+            ", "
+          )}`
+        );
 
         // Create experience-specific search URLs for each experience level
         const workableExperienceLevels: Record<string, string> = {
@@ -648,13 +658,14 @@ export class WorkableScraper {
           if (workableLevel) {
             const url = new URL(baseUrl);
             url.searchParams.set("experience", workableLevel);
-            // console.log(`Adding experience-filtered search: ${url.toString()}`);
+            console.log(`➕ [WorkableScraper] Adding experience-filtered search: ${url.toString()}`);
             searchUrls.push(url.toString());
           }
         });
       }
     }
 
+    console.log(`✅ [WorkableScraper] Generated ${searchUrls.length} total search URLs`);
     return searchUrls;
   }
 
@@ -1074,20 +1085,20 @@ export class WorkableScraper {
       const query = urlObj.searchParams.get("query") || "";
       // Extract current page from URL or default to 1
       const currentPage = parseInt(urlObj.searchParams.get("page") || "1", 10);
-      // console.log(
-        // `Workspaceing job listings from: ${searchUrl}${
-          // useDirectFetch ? " (using direct fetch method)" : ""
-        // }`
-      // );
+      console.log(
+        `🌐 [WorkableScraper] Scraping job listings from: ${searchUrl}${
+          useDirectFetch ? " (using direct fetch method)" : ""
+        }`
+      );
 
       // Get HTML content - either from Playwright worker or direct fetch
       let html = "";
 
       if (useDirectFetch) {
         // Use direct fetch without Playwright
-        // console.log(
-          // `Using direct HTML fetch for ${searchUrl} (bypassing Playwright worker)`
-        // );
+        console.log(
+          `🔗 [WorkableScraper] Using direct HTML fetch for ${searchUrl} (bypassing Playwright worker)`
+        );
         try {
           const response = await this.limiter.schedule(() =>
             fetch(searchUrl, {
@@ -1103,21 +1114,22 @@ export class WorkableScraper {
 
           if (!response.ok) {
             console.error(
-              `Direct HTML fetch failed: ${response.status} ${response.statusText}`
+              `❌ [WorkableScraper] Direct HTML fetch failed: ${response.status} ${response.statusText}`
             );
             return [];
           }
 
           html = await response.text();
+          console.log(`📄 [WorkableScraper] Direct fetch got ${html.length} chars of HTML`);
 
           if (html.length < 1000) {
             console.warn(
-              `Direct fetch returned suspiciously short HTML (${html.length} chars)`
+              `⚠️ [WorkableScraper] Direct fetch returned suspiciously short HTML (${html.length} chars)`
             );
           }
         } catch (error) {
           console.error(
-            `Error during direct HTML fetch: ${
+            `❌ [WorkableScraper] Error during direct HTML fetch: ${
               error instanceof Error ? error.message : String(error)
             }`
           );
@@ -1127,7 +1139,7 @@ export class WorkableScraper {
         // Use Playwright worker to scroll and extract job links
         const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
         if (!workerUrl) {
-          console.error("No Playwright worker URL configured");
+          console.error("❌ [WorkableScraper] No Playwright worker URL configured");
           return [];
         }
         const completeWorkerUrl = workerUrl.startsWith("http")
@@ -1138,6 +1150,10 @@ export class WorkableScraper {
           scroll: true,
           maxScrolls: 50,
         };
+        
+        console.log(`🤖 [WorkableScraper] Making POST request to ${completeWorkerUrl}/scrape`);
+        console.log(`📋 [WorkableScraper] Payload: ${JSON.stringify(payload)}`);
+        
         const response = await this.limiter.schedule(() =>
           fetch(`${completeWorkerUrl}/scrape`, {
             method: "POST",
@@ -1146,6 +1162,8 @@ export class WorkableScraper {
           })
         );
 
+        console.log(`📡 [WorkableScraper] Playwright worker response status: ${response.status}`);
+
         if (!response.ok) {
           if (response.status === 429) {
             const retryAfter = parseInt(
@@ -1153,7 +1171,7 @@ export class WorkableScraper {
               10
             );
             console.warn(
-              `Rate limited (429) when fetching ${searchUrl}. Queuing for retry after ${retryAfter}s`
+              `🐌 [WorkableScraper] Rate limited (429) when fetching ${searchUrl}. Queuing for retry after ${retryAfter}s`
             );
             this.logProblemUrl(searchUrl, "rate_limited_429", {
               timestamp: new Date().toISOString(),
@@ -1172,23 +1190,23 @@ export class WorkableScraper {
                   url: searchUrl,
                   priority: backoffPriority,
                 });
-                // console.log(
-                  // `Re-queued rate-limited URL with priority ${backoffPriority.toFixed(
-                    // 3
-                  // )} (attempt ${attempts})`
-                // );
+                console.log(
+                  `🔄 [WorkableScraper] Re-queued rate-limited URL with priority ${backoffPriority.toFixed(
+                    3
+                  )} (attempt ${attempts})`
+                );
               }, retryAfter * 1000);
             }
             return [];
           }
 
           console.error(
-            `Failed to fetch: ${response.statusText}, Status: ${response.status}`
+            `❌ [WorkableScraper] Failed to fetch: ${response.statusText}, Status: ${response.status}`
           );
           // Instead of returning empty array, fall through to direct fetch as a backup
-          // console.log(
-            // `Falling back to direct HTML fetch since Playwright worker request failed`
-          // );
+          console.log(
+            `🔄 [WorkableScraper] Falling back to direct HTML fetch since Playwright worker request failed`
+          );
 
           // Recursively call self with useDirectFetch=true
           return this.scrapeJobsFromSearchUrl(
@@ -1200,19 +1218,22 @@ export class WorkableScraper {
         }
 
         html = await response.text();
+        console.log(`📄 [WorkableScraper] Playwright worker returned ${html.length} chars of HTML`);
       }
 
       const htmlLength = html.length;
 
       // Debug info
       if (htmlLength < 1000) {
-        // console.log(
-          // `WARNING: HTML response is suspiciously short (${htmlLength} chars).`
-        // );
+        console.log(
+          `⚠️ [WorkableScraper] WARNING: HTML response is suspiciously short (${htmlLength} chars).`
+        );
       }
 
       // Extract job links from the page - we'll combine multiple extraction methods
       const jobLinks: string[] = [];
+
+      console.log(`🔍 [WorkableScraper] Extracting job links from HTML...`);
 
       // Method 1: Direct URL extraction with regex
       const jobUrlRegex =
@@ -1244,7 +1265,7 @@ export class WorkableScraper {
             jobLinks.push(jsonData.url);
           }
         } catch (e) {
-          console.error("Error parsing JSON-LD:", e);
+          console.error("❌ [WorkableScraper] Error parsing JSON-LD:", e);
         }
       }
 
@@ -1253,9 +1274,9 @@ export class WorkableScraper {
 
       // NEW: Calculate page metrics for tracking effectiveness
       const totalJobsOnPage = uniqueLinks.length;
-      // console.log(
-        // `Found ${totalJobsOnPage} unique job links on page ${currentPage} for query "${query}"`
-      // );
+      console.log(
+        `📊 [WorkableScraper] Found ${totalJobsOnPage} unique job links on page ${currentPage} for query "${query}"`
+      );
 
       // Filter out already processed jobs
       let newLinks = uniqueLinks;
@@ -1270,17 +1291,32 @@ export class WorkableScraper {
       const newJobsFound = newLinks.length;
       const duplicateJobsFound = totalJobsOnPage - newJobsFound;
 
+      console.log(
+        `📈 [WorkableScraper] Job analysis: ${newJobsFound} new jobs, ${duplicateJobsFound} duplicates (${((newJobsFound/totalJobsOnPage)*100).toFixed(1)}% effectiveness)`
+      );
+
+      // Handle case of no new jobs on this page
+      if (newLinks.length === 0) {
+        console.log(`⚠️ [WorkableScraper] No new jobs found on this page - may have reached end of results or all duplicates`);
+        if (state) {
+          state.processedUrls.push(searchUrl);
+        }
+        return [];
+      }
+
+      console.log(`🔄 [WorkableScraper] Processing details for ${newLinks.length} new jobs...`);
+
       // Calculate effectiveness score (0-1): ratio of new jobs to total jobs
       // This helps prioritize which search paths are most productive
       // Higher = more effective search, lower = more duplicates/exhausted
       const effectivenessScore =
         totalJobsOnPage > 0 ? newJobsFound / totalJobsOnPage : 0;
 
-      // console.log(
-        // `Page effectiveness: ${(effectivenessScore * 100).toFixed(
-          // 1
-        // )}% (${newJobsFound} new, ${duplicateJobsFound} duplicates)`
-      // );
+      console.log(
+        `📊 [WorkableScraper] Page effectiveness: ${(effectivenessScore * 100).toFixed(
+          1
+        )}% (${newJobsFound} new, ${duplicateJobsFound} duplicates)`
+      );
 
       // Store effectiveness metrics in search state
       if (state) {
@@ -1323,15 +1359,15 @@ export class WorkableScraper {
 
           if (totalJobsOnPage === 0) {
             // Truly empty page = end of results, stop pagination
-            // console.log(
-              // `Empty page (no jobs) for query "${query}". End of results reached.`
-            // );
+            console.log(
+              `❌ [WorkableScraper] Empty page (no jobs) for query "${query}". End of results reached.`
+            );
             return [];
           } else if (consecutiveEmptyPages < maxEmptyPages) {
             // All duplicates but not at limit, continue to next page with lower priority
-            // console.log(
-              // `All ${totalJobsOnPage} jobs already processed. This is empty page #${consecutiveEmptyPages}/${maxEmptyPages}`
-            // );
+            console.log(
+              `⚠️ [WorkableScraper] All ${totalJobsOnPage} jobs already processed. This is empty page #${consecutiveEmptyPages}/${maxEmptyPages}`
+            );
 
             // Add next page with lower priority
             const nextPageUrl = this.generateNextPageUrl(
@@ -1347,17 +1383,17 @@ export class WorkableScraper {
               const priority = Math.max(0.2, 0.8 - consecutiveEmptyPages * 0.2);
 
               state.searchUrls.push({ url: nextPageUrl, priority });
-              // console.log(
-                // `Added next page with reduced priority ${priority.toFixed(
-                  // 2
-                // )} due to consecutive empty pages`
-              // );
+              console.log(
+                `➕ [WorkableScraper] Added next page with reduced priority ${priority.toFixed(
+                  2
+                )} due to consecutive empty pages`
+              );
             }
           } else {
             // Reached max empty pages, stop pagination for this query
-            // console.log(
-              // `Reached ${maxEmptyPages} consecutive pages with all duplicate jobs. Stopping pagination for "${query}"`
-            // );
+            console.log(
+              `🛑 [WorkableScraper] Reached ${maxEmptyPages} consecutive pages with all duplicate jobs. Stopping pagination for "${query}"`
+            );
           }
         }
 
@@ -1373,9 +1409,9 @@ export class WorkableScraper {
       }
 
       // Fetch job details concurrently
-      // console.log(
-        // `Workspaceing details for ${jobsToProcess.length} jobs concurrently...`
-      // );
+      console.log(
+        `🔄 [WorkableScraper] Fetching details for ${jobsToProcess.length} jobs concurrently...`
+      );
 
       // Create array of promises, each fetching job details
       const detailFetchPromises = jobsToProcess.map((jobLink) =>
@@ -1403,7 +1439,7 @@ export class WorkableScraper {
           const isThrottledJob = (jobDetail as any).isThrottled === true;
           
           if (isThrottledJob) {
-            // console.log(`🐌 Job ${jobDetail.title} at ${jobDetail.company} was throttled - skipping scoring and deferring for retry`);
+            console.log(`🐌 [WorkableScraper] Job ${jobDetail.title} at ${jobDetail.company} was throttled - skipping scoring and deferring for retry`);
             
             // For throttled jobs, add them to a retry queue instead of processing normally
             if (state) {
@@ -1415,7 +1451,7 @@ export class WorkableScraper {
                 // Re-add the job link to be processed later
                 const retryPriority = 0.05; // Very low priority for retries
                 
-                // console.log(`🔄 Re-queuing throttled job ${jobDetail.title} for retry`);
+                console.log(`🔄 [WorkableScraper] Re-queuing throttled job ${jobDetail.title} for retry`);
                 
                 // Add back to the job processing queue (this would need more sophisticated retry logic)
                 // For now, we'll just log that it should be retried
@@ -1465,16 +1501,16 @@ export class WorkableScraper {
       ).length;
       
       if (throttledCount > 0) {
-        // console.log(
-          // `🐌 ${throttledCount} job(s) were throttled and will be retried later`
-        // );
-        // console.log(
-          // `Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl} (${throttledCount} throttled)`
-        // );
+        console.log(
+          `🐌 [WorkableScraper] ${throttledCount} job(s) were throttled and will be retried later`
+        );
+        console.log(
+          `✅ [WorkableScraper] Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl} (${throttledCount} throttled)`
+        );
       } else {
-        // console.log(
-          // `Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl}`
-        // );
+        console.log(
+          `✅ [WorkableScraper] Successfully fetched ${successfulDetailsCount}/${jobsToProcess.length} job details from ${searchUrl}`
+        );
       }
 
       // Update search state with results
@@ -1532,23 +1568,23 @@ export class WorkableScraper {
             // Add to queue with calculated priority
             state.searchUrls.push({ url: nextPageUrl, priority });
 
-            // console.log(
-              // `Added next page ${
-                // currentPage + 1
-              // } to queue with priority ${priority.toFixed(2)}`
-            // );
+            console.log(
+              `➕ [WorkableScraper] Added next page ${
+                currentPage + 1
+              } to queue with priority ${priority.toFixed(2)}`
+            );
           }
         } else {
-          // console.log(
-            // `Not adding next page: reached limit (${currentPage}/${MAX_PAGES}) or low effectiveness`
-          // );
+          console.log(
+            `🛑 [WorkableScraper] Not adding next page: reached limit (${currentPage}/${MAX_PAGES}) or low effectiveness`
+          );
         }
       }
 
       return jobListings;
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Error scraping jobs from ${searchUrl}:`, errorMsg);
+      console.error(`❌ [WorkableScraper] Error scraping jobs from ${searchUrl}:`, errorMsg);
 
       // Enhanced error handling with exponential backoff
       if (state) {
@@ -1562,7 +1598,7 @@ export class WorkableScraper {
           queryValue = urlObj.searchParams.get("query") || "unknown";
           pageNumber = parseInt(urlObj.searchParams.get("page") || "1", 10);
         } catch (e) {
-          console.error("Could not parse URL for error tracking:", e);
+          console.error("❌ [WorkableScraper] Could not parse URL for error tracking:", e);
         }
 
         // Use a more detailed error key that includes query information
@@ -1581,11 +1617,11 @@ export class WorkableScraper {
             priority: backoffPriority,
           });
 
-          // console.log(
-            // `URL fetch failed with exception, re-queued with priority ${backoffPriority.toFixed(
-              // 3
-            // )} (attempt ${attempts})`
-          // );
+          console.log(
+            `🔄 [WorkableScraper] URL fetch failed with exception, re-queued with priority ${backoffPriority.toFixed(
+              3
+            )} (attempt ${attempts})`
+          );
 
           // Log the exception for pattern analysis
           this.logProblemUrl(searchUrl, "exception", {
@@ -1601,9 +1637,9 @@ export class WorkableScraper {
             (url) => url !== searchUrl
           );
         } else {
-          // console.log(
-            // `URL fetch failed ${attempts} times with exceptions, giving up: ${searchUrl}`
-          // );
+          console.log(
+            `❌ [WorkableScraper] URL fetch failed ${attempts} times with exceptions, giving up: ${searchUrl}`
+          );
 
           // Mark as processed to avoid infinite retries
           state.processedUrls.push(searchUrl);
@@ -2056,16 +2092,16 @@ export class WorkableScraper {
     // IMPROVED APPROACH: Sort search URLs by priority before processing
     stateCopy.searchUrls.sort((a, b) => b.priority - a.priority);
 
-    // console.log(
-      // `Starting batched search with ${stateCopy.searchUrls.length} URLs in queue`
-    // );
+    console.log(
+      `🔄 [WorkableScraper] Starting batched search with ${stateCopy.searchUrls.length} URLs in queue`
+    );
     // Log the top 3 URLs with their priorities for debugging
     stateCopy.searchUrls.slice(0, 3).forEach((urlObj, i) => {
-      // console.log(
-        // `Queue #${i + 1}: ${urlObj.url} (priority: ${urlObj.priority.toFixed(
-          // 2
-        // )})`
-      // );
+      console.log(
+        `📋 [WorkableScraper] Queue #${i + 1}: ${urlObj.url} (priority: ${urlObj.priority.toFixed(
+          2
+        )})`
+      );
     });
 
     // Process search URLs up to maxSearches or until we hit maxJobs
@@ -2089,9 +2125,9 @@ export class WorkableScraper {
 
       // If no unprocessed URLs available, break the loop
       if (urlIndex === -1) {
-        // console.log(
-          // `No more unprocessed URLs available. Breaking the batch loop.`
-        // );
+        console.log(
+          `⚠️ [WorkableScraper] No more unprocessed URLs available. Breaking the batch loop.`
+        );
         break;
       }
 
@@ -2118,11 +2154,11 @@ export class WorkableScraper {
       }
 
       // Fetch jobs from search URL with improved concurrent fetching and rate limiting
-      // console.log(
-        // `Searching Workable with URL: ${searchUrl} (priority: ${urlObj.priority.toFixed(
-          // 2
-        // )})`
-      // );
+      console.log(
+        `🔍 [WorkableScraper] Scraping URL: ${searchUrl} (priority: ${urlObj.priority.toFixed(
+          2
+        )})`
+      );
       // Pass the search state to track duplicate jobs and use a longer timeout
       const jobDetailTimeoutMs = 8000; // 8 seconds for background fetches
       const newJobs = await this.scrapeJobsFromSearchUrl(
@@ -2141,26 +2177,26 @@ export class WorkableScraper {
       const jobsToAdd = newJobs.slice(0, maxJobs - jobResults.length);
       jobResults.push(...jobsToAdd);
 
-      // console.log(
-        // `Found ${newJobs.length} jobs from ${searchUrl}, added ${jobsToAdd.length} to results`
-      // );
+      console.log(
+        `📊 [WorkableScraper] Found ${newJobs.length} jobs from ${searchUrl}, added ${jobsToAdd.length} to results (total: ${jobResults.length})`
+      );
 
       // Log queue state for debugging
-      // console.log(`Queue state: ${stateCopy.searchUrls.length} URLs remaining`);
+      console.log(`🗂️ [WorkableScraper] Queue state: ${stateCopy.searchUrls.length} URLs remaining`);
       stateCopy.searchUrls.slice(0, 3).forEach((urlObj, i) => {
         const nextQuery =
           new URL(urlObj.url).searchParams.get("query") || "unknown";
         const nextPage = parseInt(
           new URL(urlObj.url).searchParams.get("page") || "1"
         );
-        // console.log(
-          // `Remaining Queue #${i + 1}: ${urlObj.url.substring(
-            // 0,
-            // 60
-          // )}... (priority: ${urlObj.priority.toFixed(
-            // 2
-          // )}, query: ${nextQuery}, page: ${nextPage})`
-        // );
+        console.log(
+          `  Remaining Queue #${i + 1}: ${urlObj.url.substring(
+            0,
+            60
+          )}... (priority: ${urlObj.priority.toFixed(
+            2
+          )}, query: ${nextQuery}, page: ${nextPage})`
+        );
       });
     }
 
@@ -2175,6 +2211,8 @@ export class WorkableScraper {
 
     // Check if we have more jobs to fetch
     hasMore = stateCopy.searchUrls.length > 0;
+
+    console.log(`✅ [WorkableScraper] Batch search complete: ${jobResults.length} jobs found, hasMore: ${hasMore}`);
 
     // Return results
     return {
@@ -2224,17 +2262,15 @@ export class WorkableScraper {
         remote, // Undefined by default (let Workable use their default)
       } = options;
 
-      // console.log(
-        // `Getting Workable jobs for user ID: ${userId} with options:`,
-        // JSON.stringify({
-          // pageSize,
-          // maxInitialJobs,
-          // searchDepth,
-          // hasContinueToken: !!continueToken,
-          // workplace,
-          // remote,
-        // })
-      // );
+      console.log(`[WorkableScraper] 🎯 Entry point: getWorkableJobsForUser called for user ${userId}`);
+      console.log(`[WorkableScraper] 📋 Options:`, JSON.stringify({
+        pageSize,
+        maxInitialJobs,
+        searchDepth,
+        hasContinueToken: !!continueToken,
+        workplace,
+        remote,
+      }));
 
       // Get or resume search state
       let searchState: SearchState;
@@ -2277,11 +2313,11 @@ export class WorkableScraper {
         }
       } else {
         // Start a new search
-        // console.log(`Starting new search for user: ${userId}`);
+        console.log(`[WorkableScraper] 🆕 Starting new search for user: ${userId}`);
         const userProfile = await storage.getUserProfile(userId);
 
         if (!userProfile) {
-          console.warn(`No profile found for user ID: ${userId}`);
+          console.warn(`[WorkableScraper] ⚠️ No profile found for user ID: ${userId}`);
           // For users without profiles, use default searches but still return pagination info
           const defaultJobs = await this.fetchJobsFromDefaultSearches();
           return {
@@ -2291,10 +2327,13 @@ export class WorkableScraper {
         }
 
         // Initialize a new search state with workplace preferences
+        console.log(`[WorkableScraper] 🏗️ Initializing search state for user ${userId}`);
         searchState = this.initializeSearchState(userProfile, searchDepth);
+        console.log(`[WorkableScraper] 📊 Search state created with ${searchState.searchUrls.length} URLs`);
 
         // Add the workplace preferences to each search URL
         if (workplace) {
+          console.log(`[WorkableScraper] 🏢 Applying workplace preference: ${workplace}`);
           // Update the search URLs with the workplace parameter
           searchState.searchUrls = searchState.searchUrls.map((urlObj) => {
             const url = new URL(urlObj.url);
@@ -2333,11 +2372,13 @@ export class WorkableScraper {
       }
 
       // Execute batch search with progress updates
+      console.log(`[WorkableScraper] 🚀 Starting executeBatchedSearch with ${searchState.searchUrls.length} URLs`);
       const result = await this.executeBatchedSearch(searchState, {
         maxJobs: maxInitialJobs,
         maxSearches: searchDepth,
         progressCallback,
       });
+      console.log(`[WorkableScraper] ✅ executeBatchedSearch completed, found ${result.jobs.length} jobs`);
 
       // Sort jobs by match score (if available)
       let sortedJobs: JobListing[] = result.jobs.sort((a, b) => {

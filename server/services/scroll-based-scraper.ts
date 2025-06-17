@@ -138,6 +138,9 @@ export class ScrollBasedScraper {
           // console.log(`Requesting Playwright worker to scroll ${correctedUrl}`);
   
           try {
+            console.log(`[ScrollBasedScraper] 🤖 Making POST request to Playwright worker: ${completeWorkerUrl}/scrape`);
+            console.log(`[ScrollBasedScraper] 📦 Payload:`, JSON.stringify(payload, null, 2));
+            
             // Using fetch with manual SSE parsing since EventSource doesn't support POST
             const response = await this.limiter.schedule(() =>
               fetch(`${completeWorkerUrl}/scrape`, {
@@ -149,6 +152,8 @@ export class ScrollBasedScraper {
                 body: JSON.stringify(payload),
               })
             );
+            
+            console.log(`[ScrollBasedScraper] 📡 Response status: ${response.status} ${response.statusText}`);
   
             if (!response.ok) {
               throw new Error(`SSE request failed: ${response.statusText}`);

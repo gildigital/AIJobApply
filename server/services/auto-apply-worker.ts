@@ -105,7 +105,7 @@ function getUserWorkState(userId: number): UserWorkState {
 /**
  * 🔄 Check if user needs new job search
  */
-function shouldSearchForJobs(userId: number): boolean {
+async function shouldSearchForJobs(userId: number): Promise<boolean> {
   const state = getUserWorkState(userId);
   
   // Don't search if already searching
@@ -113,6 +113,21 @@ function shouldSearchForJobs(userId: number): boolean {
     return false;
   }
   
+  // Check if user has pending job links to process
+  const pendingJobLinksCount = await storage.getPendingJobLinksCount(userId);
+  if (pendingJobLinksCount > 0) {
+    return true; // Has pending job links to process - no cooldown needed
+  }
+  
+  // Check if user has remaining applications for today
+  const { getRemainingApplications } = await import("../utils/subscription-utils.js");
+  const remainingApplications = await getRemainingApplications(userId);
+  if (remainingApplications <= 0) {
+    return false; // User has reached daily limit
+  }
+  
+  // If no pending job links and user has remaining applications, scrape for new jobs
+  // Remove cooldown - let it scrape as needed
   return true;
 }
 
@@ -169,7 +184,6 @@ export function startAutoApplyWorker(): void {
   console.log(`[Work Manager] ✅ Started with intelligent intervals:`);
   console.log(`  - Work Coordinator: every ${WORK_COORDINATOR_INTERVAL_MS / 60000} minutes`);
   console.log(`  - Job Processor: every ${JOB_PROCESSOR_INTERVAL_MS / 1000} seconds`);
-  console.log(`  - Job Search Cooldown: ${JOB_SEARCH_COOLDOWN_MS / 60000} minutes per user`);
 }
 
 /**
@@ -261,7 +275,6 @@ async function coordinateWork(): Promise<void> {
   console.log(`[Work Manager] 🔍 Checking work needs for ${enabledUsers.length} enabled users`);
 
   let usersNeedingWork = 0;
-  let usersInCooldown = 0;
   let usersWithPendingJobs = 0;
 
   for (const user of enabledUsers) {
@@ -285,39 +298,36 @@ async function coordinateWork(): Promise<void> {
     }
 
     // Check if user needs job search
-    if (shouldSearchForJobs(user.id)) {
+    if (await shouldSearchForJobs(user.id)) {
       usersNeedingWork++;
       
       console.log(`[Work Manager] 🔍 User ${user.id} needs job search - starting work`);
       
-      // Mark as searching and start the work (DON'T set cooldown yet!)
+      // Mark as searching and start the work
       state.isSearchingForJobs = true;
       
       try {
         // This is the ONLY place we call startAutoApply - when we actually need it!
         await startAutoApply(user.id);
         
-        // Update state after successful search - NO MORE COOLDOWN!
-        state.lastJobSearchTime = Date.now();
+        // Update state after successful search - just reset the searching flag
         state.isSearchingForJobs = false;
         
         console.log(`[Work Manager] ✅ Job search completed for user ${user.id}`);
         
         // Add delay between users to prevent overwhelming the system
-        await new Promise(resolve => setTimeout(resolve, 10000)); // 10 second delay
+        await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second delay
         
       } catch (error) {
         console.error(`[Work Manager] Error searching jobs for user ${user.id}:`, error);
         state.isSearchingForJobs = false;
-        // NO MORE COOLDOWN ON ERROR - let it retry on next cycle!
+        // Let it retry on next cycle!
       }
-    } else {
-      usersInCooldown++;
     }
   }
 
-  if (usersNeedingWork > 0 || usersInCooldown > 0 || usersWithPendingJobs > 0) {
-    console.log(`[Work Manager] 📊 Work status: ${usersNeedingWork} need work, ${usersInCooldown} in cooldown, ${usersWithPendingJobs} have pending jobs`);
+  if (usersNeedingWork > 0 || usersWithPendingJobs > 0) {
+    console.log(`[Work Manager] 📊 Work status: ${usersNeedingWork} need work, ${usersWithPendingJobs} have pending jobs`);
   }
 }
 

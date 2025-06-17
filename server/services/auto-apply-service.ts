@@ -664,16 +664,16 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
 
     if (pendingJobLinksCount === 0) {
       // No pending links, scrape for new ones
-      // console.log(`No pending job links found, scraping for new jobs for user ${userId}...`);
+      console.log(`No pending job links found, scraping for new jobs for user ${userId}...`);
       const workableJobs = await getWorkableJobsForUser(userId);
-      // console.log(`Scraping completed, found ${workableJobs.length} job placeholders from Workable`);
+      console.log(`Scraping completed, found ${workableJobs.length} job placeholders from Workable`);
 
       // Check again for pending links after scraping
       const newPendingCount = await storage.getPendingJobLinksCount(userId);
-      // console.log(`After scraping, found ${newPendingCount} pending job links`);
+      console.log(`After scraping, found ${newPendingCount} pending job links`);
 
       if (newPendingCount === 0) {
-        // console.log("No new job links found after scraping");
+        console.log("No new job links found after scraping");
         return [];
       }
     }
