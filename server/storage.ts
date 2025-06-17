@@ -705,11 +705,29 @@ export class DatabaseStorage implements IStorage {
           or(
             eq(jobLinks.status, 'pending'),
             eq(jobLinks.status, 'failed')
-          )
+          ),
+          gt(jobLinks.priority, 0) // Only count processable job links (same filter as getNextJobLinksToProcess)
         )
       );
 
     return result?.count || 0;
+  },
+
+  async getJobLinksForDebugging(userId: number): Promise<JobLinks[]> {
+    return await db
+      .select()
+      .from(jobLinks)
+      .where(
+        and(
+          eq(jobLinks.userId, userId),
+          or(
+            eq(jobLinks.status, 'pending'),
+            eq(jobLinks.status, 'failed')
+          )
+        )
+      )
+      .orderBy(desc(jobLinks.priority))
+      .limit(10);
   }
 
   // Application Payload Methods

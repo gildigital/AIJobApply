@@ -77,10 +77,12 @@ export async function startAutoApply(userId: number): Promise<string> {
     // });
 
     // Process asynchronously (TODO: this must be a background worker)
+    console.log(`[AutoApplyService] 🚀 Starting processAutoApply for user ${userId} with ${remainingApplications} remaining applications`);
     processAutoApply(userId, remainingApplications).catch(err => {
-      console.error("Error in auto-apply process:", err);
+      console.error("[AutoApplyService] ❌ Error in auto-apply process:", err);
     });
 
+    console.log(`[AutoApplyService] ✅ processAutoApply launched asynchronously for user ${userId}`);
     return "Auto-apply process started";
   } catch (error: any) {
     console.error("Error starting auto-apply:", error);
@@ -114,6 +116,8 @@ function getExternalIdFromWorkableUrl(url: string): string | null {
  */
 async function processAutoApply(userId: number, maxApplications: number): Promise<void> {
   try {
+    console.log(`[AutoApplyService] 📋 processAutoApply started for user ${userId}, max applications: ${maxApplications}`);
+    
     // TODO: Track statistics for "Searching" status instead of logging to auto_apply_logs table
     // await createAutoApplyLog({
     //   userId,
@@ -122,7 +126,9 @@ async function processAutoApply(userId: number, maxApplications: number): Promis
     // });
 
     // Get job listings for user
+    console.log(`[AutoApplyService] 🔍 Calling getJobListingsForUser for user ${userId}`);
     const jobs = await getJobListingsForUser(userId);
+    console.log(`[AutoApplyService] 📊 getJobListingsForUser returned ${jobs.length} jobs for user ${userId}`);
 
     if (jobs.length === 0) {
       // TODO: Track statistics for "Completed" status instead of logging to auto_apply_logs table
@@ -638,11 +644,16 @@ async function processJobInBatch(
  */
 export async function getJobListingsForUser(userId: number): Promise<JobListing[]> {
   try {
+    console.log(`[AutoApplyService] 🎯 getJobListingsForUser called for user ${userId}`);
+    
     // Get the user record
     const user = await storage.getUser(userId);
     if (!user) {
+      console.error(`[AutoApplyService] ❌ User ${userId} not found`);
       throw new Error("User not found");
     }
+    
+    console.log(`[AutoApplyService] ✅ User ${userId} found, isAutoApplyEnabled: ${user.isAutoApplyEnabled}`);
 
     // Get the user profile to access preferences
     const profile = await storage.getUserProfile(userId);
@@ -660,13 +671,14 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
 
     // First, check if we have pending job links to process
     const pendingJobLinksCount = await storage.getPendingJobLinksCount(userId);
-    // console.log(`Found ${pendingJobLinksCount} pending job links for user ${userId}`);
+    console.log(`[AutoApplyService] 📊 Found ${pendingJobLinksCount} pending job links for user ${userId}`);
 
     if (pendingJobLinksCount === 0) {
       // No pending links, scrape for new ones
-      console.log(`No pending job links found, scraping for new jobs for user ${userId}...`);
+      console.log(`[AutoApplyService] 🔎 No pending job links found, scraping for new jobs for user ${userId}...`);
+      console.log(`[AutoApplyService] 🌐 Calling getWorkableJobsForUser from workable-scroll-integration`);
       const workableJobs = await getWorkableJobsForUser(userId);
-      console.log(`Scraping completed, found ${workableJobs.length} job placeholders from Workable`);
+      console.log(`[AutoApplyService] ✅ Scraping completed, found ${workableJobs.length} job placeholders from Workable`);
 
       // Check again for pending links after scraping
       const newPendingCount = await storage.getPendingJobLinksCount(userId);
@@ -680,10 +692,12 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
 
     // Now process job links one at a time
     // Get multiple pending links since we'll process them one by one in processAutoApply
+    console.log(`[AutoApplyService] 🔗 Getting next job links to process for user ${userId}`);
     const pendingLinks = await storage.getNextJobLinksToProcess(userId, 50); // Get up to 50 links to process
-    // console.log(`Retrieved ${pendingLinks.length} job links for processing`);
+    console.log(`[AutoApplyService] 📋 Retrieved ${pendingLinks.length} job links for processing`);
 
     if (pendingLinks.length === 0) {
+      console.log(`[AutoApplyService] ❌ No pending links available to process for user ${userId}, returning empty array`);
       return [];
     }
 
@@ -701,6 +715,7 @@ export async function getJobListingsForUser(userId: number): Promise<JobListing[
       _jobLinkId: link.id
     }));
 
+    console.log(`[AutoApplyService] ✅ Returning ${jobListings.length} job listings for user ${userId}`);
     return jobListings;
   } catch (error) {
     // Log the error but don't fail the entire process
