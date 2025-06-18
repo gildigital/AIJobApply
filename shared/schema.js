@@ -199,7 +199,7 @@ export const demographicQuestionsSchema = z.object({
 export const jobQueue = pgTable("job_queue", {
     id: serial("id").primaryKey(),
     userId: integer("user_id").notNull().references(() => users.id),
-    jobId: integer("job_id").notNull().references(() => jobTracker.id),
+    jobId: integer("job_id").references(() => jobTracker.id),
     priority: integer("priority").default(0).notNull(),
     status: text("status", { enum: ["pending", "processing", "completed", "failed", "skipped", "standby"] }).default("pending").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -231,7 +231,7 @@ export const jobLinksUnique = unique().on(jobLinks.userId, jobLinks.url);
 // Manual schema definition to avoid type errors
 export const insertJobQueueSchema = z.object({
     userId: z.number(),
-    jobId: z.number(),
+    jobId: z.number().optional(),
     priority: z.number().optional().default(0),
     status: z.string().optional().default("pending"),
     createdAt: z.date().optional(),
