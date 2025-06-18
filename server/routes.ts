@@ -932,7 +932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get job details for each queued job
       const queuedJobDetails = await Promise.all(
         queuedJobs.map(async (queueItem) => {
-          const job = await storage.getJob(queueItem.jobId);
+          const job = queueItem.jobId ? await storage.getJob(queueItem.jobId) : null;
           return {
             queueId: queueItem.id,
             queueStatus: queueItem.status,
@@ -940,7 +940,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             error: queueItem.error,
             createdAt: queueItem.createdAt,
             processedAt: queueItem.processedAt,
-            job: job || { id: queueItem.jobId, jobTitle: "Unknown Job", company: "Unknown" }
+            job: job || { id: queueItem.jobId || 0, jobTitle: "Queued Job", company: "Pending Application" }
           };
         })
       );
@@ -1071,8 +1071,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Validate required fields
-      if (!queueId || !jobId || !userId || !finalStatus) {
+      // Validate required fields (jobId can be null initially)
+      if (!queueId || !userId || !finalStatus) {
         console.error("Missing required fields in worker callback", { queueId, jobId, userId, finalStatus });
         return res.status(400).json({ 
           success: false, 
@@ -1080,7 +1080,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      console.log(`📞 Worker callback: Job ${jobId} (Queue ${queueId}) - Final Status: ${finalStatus}`);
+      console.log(`📞 Worker callback: Queue ${queueId} - Final Status: ${finalStatus}`);
 
       // Update the job queue status
       const now = new Date();
@@ -1098,53 +1098,127 @@ export async function registerRoutes(app: Express): Promise<Server> {
         applicationStatus = 'failed';
       }
 
-      // Update job queue record
-      await storage.updateQueuedJob(queueId, {
-        status: queueStatus as any,
-        error: finalStatus === 'failed' ? message : undefined,
-        processedAt: now,
-        updatedAt: now
-      });
+      let createdJobId: number | null = jobId; // Will be null initially, set when job is created
 
-      // Update job tracker record
-      await storage.updateJob(jobId, {
-        status: finalStatus === 'completed' ? 'Applied' : 'Saved', // This is what getJobsAppliedToday counts!
-        applicationStatus: applicationStatus as any,
-        appliedAt: finalStatus === 'completed' ? now : undefined,
-        submittedAt: now,
-        updatedAt: now
-      });
-
-      // If successful, increment daily application count for subscription limits
+      // ✨ NEW LOGIC: Only create job tracker record for successful applications
       if (finalStatus === 'completed') {
-        // Get user to check current daily count
-        const user = await storage.getUser(userId);
-        if (user) {
-          console.log(`✅ Application submitted successfully for user ${userId} - updating daily limits`);
+        try {
+          // Get the application payload to extract job details
+          const payload = await storage.getApplicationPayload(queueId);
+          if (payload && payload.job) {
+            const job = payload.job;
+            
+            // Check if job already exists (deduplication)
+            let existingJob = null;
+            if (job.externalJobId) {
+              existingJob = await storage.getJobByExternalId(job.externalJobId);
+            }
+            
+            if (!existingJob) {
+              // Create the job tracker record with 'Applied' status
+              const newJob = await storage.addJobToTracker({
+                userId,
+                jobTitle: job.jobTitle,
+                company: job.company,
+                link: job.applyUrl,
+                status: 'Applied', // ✨ Only applied jobs go in tracker!
+                applicationStatus: 'applied',
+                externalJobId: job.externalJobId || '',
+                matchScore: payload.matchScore,
+                source: job.source || 'workable',
+                appliedAt: now,
+                submittedAt: now,
+                updatedAt: now
+              });
+              
+              createdJobId = newJob.id;
+              console.log(`✅ Created job tracker record ${createdJobId} for successful application`);
+              
+              // Update the queue record with the new jobId
+              await storage.updateQueuedJob(queueId, {
+                jobId: createdJobId,
+                status: queueStatus as any,
+                error: undefined,
+                processedAt: now,
+                updatedAt: now
+              });
+              
+            } else {
+              // Job already exists, just update it
+              createdJobId = existingJob.id;
+              await storage.updateJob(existingJob.id, {
+                status: 'Applied',
+                applicationStatus: 'applied',
+                appliedAt: now,
+                submittedAt: now,
+                updatedAt: now
+              });
+              
+              // Update queue with existing jobId
+              await storage.updateQueuedJob(queueId, {
+                jobId: createdJobId,
+                status: queueStatus as any,
+                error: undefined,
+                processedAt: now,
+                updatedAt: now
+              });
+            }
+            
+            // Create auto-apply log entry with specific job details
+            const { createAutoApplyLog } = await import("./services/auto-apply-service.js");
+            await createAutoApplyLog({
+              userId,
+              jobId: createdJobId!, // Use ! since we know it's not null here
+              status: "Applied",
+              message: `Application submitted successfully for ${job.company} - ${job.jobTitle}`
+            });
+            
+          } else {
+            console.error("No payload found for successful application - this shouldn't happen");
+            // Still update queue status even if we can't create job record
+            await storage.updateQueuedJob(queueId, {
+              status: queueStatus as any,
+              error: "Payload missing for job creation",
+              processedAt: now,
+              updatedAt: now
+            });
+          }
+        } catch (jobCreationError) {
+          console.error("Error creating job tracker record:", jobCreationError);
+          // Update queue as failed if job creation fails
+          await storage.updateQueuedJob(queueId, {
+            status: 'failed',
+            error: `Job creation failed: ${jobCreationError instanceof Error ? jobCreationError.message : String(jobCreationError)}`,
+            processedAt: now,
+            updatedAt: now
+          });
           
-          // Get job details for better log message
-          const jobDetails = await storage.getJob(jobId);
-          const jobTitle = jobDetails?.jobTitle || "Unknown Job";
-          const company = jobDetails?.company || "Unknown Company";
-          
-          // Create auto-apply log entry with specific job details
-          const { createAutoApplyLog } = await import("./services/auto-apply-service.js");
-          await createAutoApplyLog({
-            userId,
-            jobId,
-            status: "Applied",
-            message: `Application submitted successfully for ${company} - ${jobTitle}`
+          return res.status(500).json({
+            success: false,
+            error: "Failed to create job tracker record"
           });
         }
+      } else {
+        // For failed/skipped applications, just update the queue status
+        // No job tracker record is created
+        await storage.updateQueuedJob(queueId, {
+          status: queueStatus as any,
+          error: finalStatus === 'failed' ? message : undefined,
+          processedAt: now,
+          updatedAt: now
+        });
+        
+        console.log(`❌ Application ${finalStatus} - no job tracker record created`);
       }
 
-      console.log(`✅ Job status updated: Queue ${queueId} -> ${queueStatus}, Job ${jobId} -> ${applicationStatus}`);
+      console.log(`✅ Job status updated: Queue ${queueId} -> ${queueStatus}${createdJobId ? `, Job ${createdJobId} -> Applied` : ', no job record created'}`);
 
       res.json({ 
         success: true, 
         message: "Job status updated successfully",
         queueStatus,
-        applicationStatus
+        applicationStatus,
+        jobId: createdJobId
       });
 
     } catch (error: any) {

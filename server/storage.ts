@@ -355,9 +355,9 @@ export class DatabaseStorage implements IStorage {
 
   // Job Queue Methods
   async enqueueJob(job: InsertJobQueue): Promise<JobQueue> {
-    // Ensure job has required userId and jobId
-    if (!job.userId || !job.jobId) {
-      throw new Error('userId and jobId are required for enqueuing a job');
+    // Ensure job has required userId (jobId is now optional)
+    if (!job.userId) {
+      throw new Error('userId is required for enqueuing a job');
     }
 
     const [newJob] = await db
@@ -370,10 +370,10 @@ export class DatabaseStorage implements IStorage {
   async enqueueJobs(jobs: InsertJobQueue[]): Promise<JobQueue[]> {
     if (!jobs.length) return [];
 
-    // Validate that all jobs have required fields
+    // Validate that all jobs have required fields (jobId is now optional)
     for (const job of jobs) {
-      if (!job.userId || !job.jobId) {
-        throw new Error('userId and jobId are required for enqueuing jobs');
+      if (!job.userId) {
+        throw new Error('userId is required for enqueuing jobs');
       }
     }
 

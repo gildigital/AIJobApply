@@ -554,14 +554,14 @@ async function processJobInBatch(
           message = `Job submitted for background processing: ${job.company} - ${job.jobTitle}`;
           
           // Add to job tracker with processing status - callback will update when complete
-          jobRecord = await addJobToTracker(
-            userId,
-            job,
-            matchResult.matchScore,
-            status,
-            matchResult.reasons.join('\n'),
-            applicationStatus
-          );
+          // jobRecord = await addJobToTracker(
+          //   userId,
+          //   job,
+          //   matchResult.matchScore,
+          //   status,
+          //   matchResult.reasons.join('\n'),
+          //   applicationStatus
+          // );
         } else {
           // TODO: Track statistics for non-Applied job outcomes instead of adding to job_tracker table
           // Consider implementing a separate statistics/analytics system for:

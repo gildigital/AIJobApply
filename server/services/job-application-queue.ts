@@ -47,30 +47,18 @@ export interface ApplicationQueueResult {
  * 
  * This replaces the synchronous submitWorkableApplication approach
  * with an async queue-based pattern that eliminates timeout issues.
+ * 
+ * ✨ NEW APPROACH: No job tracker record is created until application succeeds!
  */
 export async function queueJobApplication(payload: JobApplicationPayload): Promise<ApplicationQueueResult> {
   try {
-    // First, ensure the job exists in the job_tracker table
-    let jobRecord = await storage.getJobByExternalId(payload.job.externalJobId || '');
+    // ✨ REMOVED: No longer create job tracker record upfront
+    // Job tracker records are only created when applications succeed (in callback)
     
-    if (!jobRecord) {
-      // Create the job record if it doesn't exist
-      jobRecord = await storage.addJobToTracker({
-        userId: payload.user.id,
-        jobTitle: payload.job.jobTitle,
-        company: payload.job.company,
-        link: payload.job.applyUrl,
-        status: 'saved',
-        externalJobId: payload.job.externalJobId || '',
-        matchScore: payload.matchScore,
-        source: payload.job.source || 'workable'
-      });
-    }
-
-    // Create application queue entry with high priority for immediate processing
+    // Create application queue entry WITHOUT a jobId (will be set in callback)
     const queuedJob = await storage.enqueueJob({
       userId: payload.user.id,
-      jobId: jobRecord.id,
+      // jobId: undefined, // Will be set when job tracker record is created on success
       priority: 100, // High priority for application submissions
       status: 'pending',
       attemptCount: 0
@@ -159,15 +147,15 @@ export async function processQueuedApplication(queuedJobId: number): Promise<'su
       return 'error';
     }
 
-    // Get queued job for IDs
+    // Get queued job for IDs  
     const queuedJob = await storage.getQueuedJob(queuedJobId);
     
     // Submit to Playwright worker with callback configuration
-    // Add queue and job IDs for status callbacks
+    // ✨ CHANGED: jobId will be null since we don't create job tracker record until success
     const payloadWithIds = {
       ...payload,
       queueId: queuedJobId,
-      jobId: queuedJob?.jobId
+      jobId: null // Will be created in callback when application succeeds
     };
     
     const result = await submitToPlaywrightWorker(payloadWithIds);

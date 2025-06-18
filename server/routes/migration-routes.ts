@@ -5,6 +5,8 @@ import { runMigration as runJobPreferencesMigration } from '../migrations/add-jo
 import { runMigration as runJobQueueStandbyMigration } from '../migrations/add-standby-status-to-job-queue.js';
 // @ts-ignore - JS migration file
 import { runMigration as runJobLinksMigration } from '../migrations/add-job-links-table.js';
+// @ts-ignore - JS migration file
+import { runMigration as runJobQueueJobIdOptionalMigration } from '../migrations/make-job-queue-jobid-optional.js';
 
 /**
  * Register routes for running database migrations
@@ -54,6 +56,24 @@ export function registerMigrationRoutes(app: Express) {
     try {
       await runJobLinksMigration();
       res.json({ success: true, message: "Job links migration completed successfully" });
+    } catch (error) {
+      console.error("Migration failed:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Migration failed", 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
+
+  /**
+   * Endpoint to run the job queue jobId optional migration
+   * This is a temporary endpoint for development and should be removed in production
+   */
+  app.post("/server-only/run-job-queue-jobid-optional-migration", async (req: Request, res: Response) => {
+    try {
+      const result = await runJobQueueJobIdOptionalMigration();
+      res.json({ success: true, message: result.message });
     } catch (error) {
       console.error("Migration failed:", error);
       res.status(500).json({ 
