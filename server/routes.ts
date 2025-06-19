@@ -1082,6 +1082,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`📞 Worker callback: Queue ${queueId} - Final Status: ${finalStatus}`);
 
+      // DEBUG: Track callback processing decision
+      console.log(`[DEBUG] 📞 Received callback with finalStatus: '${finalStatus}', will ${finalStatus === 'completed' ? 'CREATE' : 'SKIP'} job tracker record`);
+      console.log(`[DEBUG] 📞 Full callback payload:`, JSON.stringify(req.body, null, 2));
+
       // Update the job queue status
       const now = new Date();
       let queueStatus = 'completed';
@@ -1133,6 +1137,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               createdJobId = newJob.id;
               console.log(`✅ Created job tracker record ${createdJobId} for successful application`);
+              
+              // DEBUG: Track successful job tracker creation
+              console.log(`[DEBUG] ✅ Successfully created job tracker record ID: ${createdJobId} for ${job.company} - ${job.jobTitle}`);
               
               // Update the queue record with the new jobId
               await storage.updateQueuedJob(queueId, {
@@ -1209,6 +1216,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         
         console.log(`❌ Application ${finalStatus} - no job tracker record created`);
+        
+        // DEBUG: Track why job tracker record was not created
+        console.log(`[DEBUG] ❌ Skipping job tracker creation because finalStatus='${finalStatus}' (not 'completed')`);
       }
 
       console.log(`✅ Job status updated: Queue ${queueId} -> ${queueStatus}${createdJobId ? `, Job ${createdJobId} -> Applied` : ', no job record created'}`);
