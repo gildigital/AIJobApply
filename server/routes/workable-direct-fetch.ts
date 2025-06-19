@@ -45,6 +45,7 @@ export function registerWorkableDirectFetch(app: Express) {
         
         if (!workerResponse.ok) {
           // Special handling for 429 rate limiting from our throttling system
+          // This will not be hit if we are using the DEFCON 0 rate limiter
           if (workerResponse.status === 429) {
             // console.log(`🐌 Playwright worker is throttled (429) for ${url}`);
             
@@ -113,6 +114,7 @@ export function registerWorkableDirectFetch(app: Express) {
         console.error("Error calling playwright worker:", workerError);
         
         // Check if this was a throttling error - if so, don't fall back
+        // This will not be hit if we are using the DEFCON 0 rate limiter
         if (workerError instanceof Error && workerError.message.includes('Worker responded with status 429')) {
           // console.log("🐌 Worker is throttled - NOT falling back to direct HTML parsing to respect throttling");
           // The 429 response was already sent above, so we should not reach here

@@ -1237,6 +1237,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     // Only allow admins or in development mode
+    // TODO: Who is the admin? Where is it set?
     const isAdmin = req.user.isAdmin === true;
     const isDevelopment = process.env.NODE_ENV === "development";
 

@@ -55,6 +55,7 @@ export async function startAutoApply(userId: number): Promise<string> {
       return `Auto-apply failed: ${result.reason}`;
     }
 
+    // TODO: Redundant checks - we did both of these in shouldSearchForJobs()
     // Get remaining applications allowed today
     const { getRemainingApplications } = await import("../utils/subscription-utils.js");
     const remainingApplications = await getRemainingApplications(userId);
@@ -312,12 +313,13 @@ async function processJobInBatch(
         const VITE_BACKEND_URL = process.env.VITE_BACKEND_URL || "http://localhost:5000";
         const apiUrl = `${VITE_BACKEND_URL}/api/workable/direct-fetch?url=${encodeURIComponent(job.applyUrl)}`;
 
-        // console.log(`Fetching Workable job from URL: ${job.applyUrl}`);
+        console.log(`Fetching Workable job from URL: ${job.applyUrl}`);
         const response = await fetch(apiUrl);
 
         if (!response.ok) {
           console.error(`Failed to fetch job details (${job.applyUrl}): ${response.status} ${response.statusText}`);
 
+          // This will not be hit if we are using the DEFCON 0 rate limiter
           if (response.status === 429) {
             // Throttled by our throttling system - handle specially
             // console.log(`🐌 Job description fetching throttled for ${job.applyUrl}`);
