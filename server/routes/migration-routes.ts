@@ -7,6 +7,9 @@ import { runMigration as runJobQueueStandbyMigration } from '../migrations/add-s
 import { runMigration as runJobLinksMigration } from '../migrations/add-job-links-table.js';
 // @ts-ignore - JS migration file
 import { runMigration as runJobQueueJobIdOptionalMigration } from '../migrations/make-job-queue-jobid-optional.js';
+// @ts-ignore - JS migration file
+import { runMigration as runAppliedStatusToJobLinksMigration } from '../migrations/add-applied-status-to-job-links.js';
+
 
 /**
  * Register routes for running database migrations
@@ -83,7 +86,25 @@ export function registerMigrationRoutes(app: Express) {
       });
     }
   });
-  
+
+  /**
+   * Endpoint to run the applied status to job links migration
+   * This is a temporary endpoint for development and should be removed in production
+   */
+  app.post("/server-only/run-applied-status-to-job-links-migration", async (req: Request, res: Response) => {
+    try {
+      await runAppliedStatusToJobLinksMigration();
+      res.json({ success: true, message: "Applied status to job links migration completed successfully" });
+    } catch (error) {
+      console.error("Migration failed:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Migration failed", 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
+
   // Legacy endpoint for backwards compatibility
   app.post("/server-only/run-migration", async (req: Request, res: Response) => {
     try {

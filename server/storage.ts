@@ -88,6 +88,7 @@ export interface IStorage {
   getNextJobLinksToProcess(userId: number, limit: number): Promise<JobLinks[]>;
   updateJobLink(id: number, data: Partial<JobLinks>): Promise<JobLinks | undefined>;
   markJobLinkAsProcessed(id: number, jobTrackerId?: number): Promise<JobLinks | undefined>;
+  markJobLinkAsApplied(id: number, jobTrackerId?: number): Promise<JobLinks | undefined>;
   getPendingJobLinksCount(userId: number): Promise<number>;
 
   // Application Payload Methods
@@ -664,6 +665,7 @@ export class DatabaseStorage implements IStorage {
           eq(jobLinks.userId, userId),
           or(
             eq(jobLinks.status, 'pending'),
+            eq(jobLinks.status, 'processed'), // Include processed jobs for retry logic
             eq(jobLinks.status, 'failed')
           ),
           gt(jobLinks.priority, 0) // skip any links we've demoted
@@ -689,6 +691,15 @@ export class DatabaseStorage implements IStorage {
   async markJobLinkAsProcessed(id: number, jobTrackerId?: number): Promise<JobLinks | undefined> {
     const updateData: Partial<JobLinks> = {
       status: 'processed',
+      processedAt: new Date(),
+    };
+
+    return await this.updateJobLink(id, updateData);
+  }
+
+  async markJobLinkAsApplied(id: number, jobTrackerId?: number): Promise<JobLinks | undefined> {
+    const updateData: Partial<JobLinks> = {
+      status: 'applied',
       processedAt: new Date(),
     };
 

@@ -232,15 +232,16 @@ async function submitToPlaywrightWorker(payload: any): Promise<'success' | 'skip
         fileContent: payload.resume.fileContent,
       } : null,
       profile: payload.profile,
-      job: {
-        jobTitle: payload.job.jobTitle,
-        company: payload.job.company,
-        description: payload.job.description,
-        applyUrl: payload.job.applyUrl,
-        location: payload.job.location,
-        source: payload.job.source,
-        externalJobId: payload.job.externalJobId,
-      },
+          job: {
+      jobTitle: payload.job.jobTitle,
+      company: payload.job.company,
+      description: payload.job.description,
+      applyUrl: payload.job.applyUrl,
+      location: payload.job.location,
+      source: payload.job.source,
+      externalJobId: payload.job.externalJobId,
+      _jobLinkId: payload.job._jobLinkId, // 🐛 BUG FIX: Preserve job link ID for status updates
+    },
       matchScore: payload.matchScore,
       formData: payload.formData,
       

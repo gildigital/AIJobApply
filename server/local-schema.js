@@ -225,7 +225,7 @@ export const jobLinks = pgTable("job_links", {
     source: text("source").notNull().default("workable"), // Source of the job posting
     externalJobId: text("external_job_id"), // Extracted from URL for deduplication
     query: text("query"), // Search query that found this job
-    status: text("status", { enum: ["pending", "processing", "processed", "failed", "skipped"] }).default("pending").notNull(),
+    status: text("status", { enum: ["pending", "processing", "processed", "failed", "skipped", "applied"] }).default("pending").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     processedAt: timestamp("processed_at"),
     priority: real("priority").default(1.0).notNull(), // Priority for processing

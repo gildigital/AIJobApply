@@ -1159,14 +1159,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 message: `Application submitted successfully for ${job.company} - ${job.jobTitle}`
               });
               
-              // 🐛 BUG FIX: Delete payload after successful job creation
-              try {
-                await storage.deleteApplicationPayload(queueId);
-                console.log(`🧹 Cleaned up application payload for queue ${queueId}`);
-              } catch (cleanupError) {
-                console.error("Warning: Failed to cleanup application payload:", cleanupError);
-                // Don't fail the whole operation if cleanup fails
+                          // 🐛 BUG FIX: Mark job link as 'applied' and delete payload after successful job creation
+            try {
+              if (job._jobLinkId) {
+                await storage.markJobLinkAsApplied(job._jobLinkId, createdJobId);
+                console.log(`✅ Marked job link ${job._jobLinkId} as 'applied'`);
+              } else {
+                console.log('⚠️ No job link ID found in payload, skipping job link status update');
               }
+              
+              await storage.deleteApplicationPayload(queueId);
+              console.log(`🧹 Cleaned up application payload for queue ${queueId}`);
+            } catch (cleanupError) {
+              console.error("Warning: Failed to cleanup application payload or update job link:", cleanupError);
+              // Don't fail the whole operation if cleanup fails
+            }
               
             } else {
               // Job already exists, just update it
@@ -1197,14 +1204,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 message: `Application submitted successfully for ${job.company} - ${job.jobTitle} (existing job)`
               });
               
-              // 🐛 BUG FIX: Delete payload after successful job update
-              try {
-                await storage.deleteApplicationPayload(queueId);
-                console.log(`🧹 Cleaned up application payload for queue ${queueId} (existing job)`);
-              } catch (cleanupError) {
-                console.error("Warning: Failed to cleanup application payload:", cleanupError);
-                // Don't fail the whole operation if cleanup fails
+                          // 🐛 BUG FIX: Mark job link as 'applied' and delete payload after successful job update  
+            try {
+              if (job._jobLinkId) {
+                await storage.markJobLinkAsApplied(job._jobLinkId, createdJobId);
+                console.log(`✅ Marked job link ${job._jobLinkId} as 'applied' (existing job)`);
+              } else {
+                console.log('⚠️ No job link ID found in payload, skipping job link status update (existing job)');
               }
+              
+              await storage.deleteApplicationPayload(queueId);
+              console.log(`🧹 Cleaned up application payload for queue ${queueId} (existing job)`);
+            } catch (cleanupError) {
+              console.error("Warning: Failed to cleanup application payload or update job link:", cleanupError);
+              // Don't fail the whole operation if cleanup fails
+            }
             }
             
           } else {
@@ -1304,6 +1318,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error retrieving application statistics:", error);
       res.status(500).json({
         message: error.message || "Failed to retrieve application statistics",
+        success: false
+      });
+    }
+  });
+
+  // Migration endpoint to add 'applied' status to job_links table
+  app.post("/api/admin/migrate-add-applied-status", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    // Only allow in development mode or for admins  
+    const isDevelopment = process.env.NODE_ENV === "development";
+    const isAdmin = req.user.isAdmin === true;
+    
+    if (!isDevelopment && !isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    try {
+      const { runMigration } = await import('./migrations/add-applied-status-to-job-links.js');
+      const result = await runMigration();
+      
+      res.json({
+        message: "Migration completed successfully",
+        result,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error("Migration failed:", error);
+      res.status(500).json({
+        message: error.message || "Migration failed",
         success: false
       });
     }
