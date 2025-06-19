@@ -1150,6 +1150,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 updatedAt: now
               });
               
+              // Create auto-apply log entry with specific job details
+              const { createAutoApplyLog } = await import("./services/auto-apply-service.js");
+              await createAutoApplyLog({
+                userId,
+                jobId: createdJobId!, // Use ! since we know it's not null here
+                status: "Applied",
+                message: `Application submitted successfully for ${job.company} - ${job.jobTitle}`
+              });
+              
+              // 🐛 BUG FIX: Delete payload after successful job creation
+              try {
+                await storage.deleteApplicationPayload(queueId);
+                console.log(`🧹 Cleaned up application payload for queue ${queueId}`);
+              } catch (cleanupError) {
+                console.error("Warning: Failed to cleanup application payload:", cleanupError);
+                // Don't fail the whole operation if cleanup fails
+              }
+              
             } else {
               // Job already exists, just update it
               createdJobId = existingJob.id;
@@ -1169,16 +1187,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 processedAt: now,
                 updatedAt: now
               });
+              
+              // Create auto-apply log entry for existing job
+              const { createAutoApplyLog } = await import("./services/auto-apply-service.js");
+              await createAutoApplyLog({
+                userId,
+                jobId: createdJobId,
+                status: "Applied",
+                message: `Application submitted successfully for ${job.company} - ${job.jobTitle} (existing job)`
+              });
+              
+              // 🐛 BUG FIX: Delete payload after successful job update
+              try {
+                await storage.deleteApplicationPayload(queueId);
+                console.log(`🧹 Cleaned up application payload for queue ${queueId} (existing job)`);
+              } catch (cleanupError) {
+                console.error("Warning: Failed to cleanup application payload:", cleanupError);
+                // Don't fail the whole operation if cleanup fails
+              }
             }
-            
-            // Create auto-apply log entry with specific job details
-            const { createAutoApplyLog } = await import("./services/auto-apply-service.js");
-            await createAutoApplyLog({
-              userId,
-              jobId: createdJobId!, // Use ! since we know it's not null here
-              status: "Applied",
-              message: `Application submitted successfully for ${job.company} - ${job.jobTitle}`
-            });
             
           } else {
             console.error("No payload found for successful application - this shouldn't happen");
@@ -1219,6 +1246,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // DEBUG: Track why job tracker record was not created
         console.log(`[DEBUG] ❌ Skipping job tracker creation because finalStatus='${finalStatus}' (not 'completed')`);
+        
+        // 🐛 BUG FIX: Also clean up payload for failed/skipped applications
+        try {
+          await storage.deleteApplicationPayload(queueId);
+          console.log(`🧹 Cleaned up application payload for ${finalStatus} application (queue ${queueId})`);
+        } catch (cleanupError) {
+          console.error("Warning: Failed to cleanup application payload:", cleanupError);
+        }
       }
 
       console.log(`✅ Job status updated: Queue ${queueId} -> ${queueStatus}${createdJobId ? `, Job ${createdJobId} -> Applied` : ', no job record created'}`);

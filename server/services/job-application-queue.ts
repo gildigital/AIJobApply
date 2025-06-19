@@ -168,10 +168,9 @@ export async function processQueuedApplication(queuedJobId: number): Promise<'su
       updatedAt: new Date()
     });
 
-    // Don't update job tracker here - worker will handle it via callback
-
-    // Clean up the payload data
-    await storage.deleteApplicationPayload(queuedJobId);
+    // 🐛 BUG FIX: Don't delete payload here! Move to callback handler after successful processing
+    // The payload needs to remain available for the worker callback to create job tracker records
+    // await storage.deleteApplicationPayload(queuedJobId);
 
     return result;
 
