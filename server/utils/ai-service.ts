@@ -21,8 +21,8 @@ if (!hasOpenAIKey && !hasAnthropicKey) {
   console.warn("WARNING: No AI service API keys found (OPENAI_API_KEY or ANTHROPIC_API_KEY). Job matching will use fallback scoring.");
 } else {
   // console.log("AI scoring service available with:", 
-    // hasOpenAIKey ? "OpenAI" : "", 
-    // hasAnthropicKey ? (hasOpenAIKey ? " and Anthropic" : "Anthropic") : ""
+  // hasOpenAIKey ? "OpenAI" : "", 
+  // hasAnthropicKey ? (hasOpenAIKey ? " and Anthropic" : "Anthropic") : ""
   // );
 }
 
@@ -41,22 +41,22 @@ export async function matchResumeToJob(resumeText: string, jobDescription: strin
       return await matchWithOpenAI(resumeText, jobDescription);
     } catch (error) {
       console.error("Error with OpenAI matching:", error);
-      
+
       // If Anthropic is available, try it as fallback
       if (ANTHROPIC_API_KEY) {
         // console.log("Falling back to Anthropic for job matching");
         return await matchWithAnthropic(resumeText, jobDescription);
       }
-      
+
       // If no fallback, re-throw the error
       throw error;
     }
-  } 
+  }
   // If no OpenAI key but Anthropic is available, use Anthropic
   else if (ANTHROPIC_API_KEY) {
     // console.log("Using Anthropic for job matching");
     return await matchWithAnthropic(resumeText, jobDescription);
-  } 
+  }
   // If no AI services are available, throw an error
   else {
     throw new Error("No AI service API keys available for job matching");
@@ -66,31 +66,32 @@ export async function matchResumeToJob(resumeText: string, jobDescription: strin
 /**
  * Matches a resume with a job description using OpenAI's API
  */
-async function matchWithOpenAI(resumeText: string, jobDescription: string): Promise<MatchResult> {
-  // Define the prompt
-  const systemPrompt = `You are an expert hiring manager. Given a user's resume and a job description, determine how well they match.
-  
-Return a percentage match (0-100%) and a list of 3-5 short, specific reasons explaining the match.
+async function matchWithOpenAI(
+  resumeText: string,
+  jobDescription: string
+): Promise<MatchResult> {
+  const systemPrompt = `
+You are an expert hiring manager. Given a user's resume and a job description,
+determine how well they match.
 
-Return JSON ONLY in this exact shape:
+Respond **only** with a JSON object matching this schema:
+
 {
-  "matchScore": <0-100 number>,
-  "reasons": [
-    "<specific reason 1>",
-    "<specific reason 2>",
-    "<specific reason 3>"
-  ]
+  "matchScore": <integer 0–100>,
+  "reasons": [ "<short reason 1>", "<short reason 2>", "<short reason 3>" ]
 }
 
-Focus on specific, concrete skills and experience. Each reason should be 10 words or less.`;
+Each reason must be 10 words or fewer.
+`.trim();
 
-  const userPrompt = `# RESUME:
+  const userPrompt = `
+# RESUME:
 ${resumeText}
 
 # JOB DESCRIPTION:
-${jobDescription}`;
+${jobDescription}
+`.trim();
 
-  // Make the API request to OpenAI
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -98,31 +99,58 @@ ${jobDescription}`;
       "Authorization": `Bearer ${OPENAI_API_KEY}`
     },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model: "gpt-4o-2024-08-06", // ✅ Keep snapshot for stability
+      temperature: 0,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
       ],
-      temperature: 0.3, // Lower temperature for more consistent results
-      response_format: { type: "json_object" }
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              matchScore: { type: "integer", minimum: 0, maximum: 100 },
+              reasons: {
+                type: "array",
+                items: { type: "string" },
+                minItems: 3,
+                maxItems: 5
+              }
+            },
+            required: ["matchScore", "reasons"],
+            additionalProperties: false
+          }
+        }
+      }
     })
   });
 
   if (!response.ok) {
-    const errorData = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} ${errorData}`);
+    const err = await response.text();
+    throw new Error(`OpenAI API error ${response.status}: ${err}`);
   }
 
-  const data = await response.json();
-  const result = JSON.parse(data.choices[0].message.content);
-  
-  // Validate the result
-  if (typeof result.matchScore !== 'number' || !Array.isArray(result.reasons)) {
-    throw new Error("Invalid response format from OpenAI");
+  // Parse structured output (required as of current API behavior)
+  const payload = await response.json();
+  const contentString = payload.choices[0].message.content;
+
+  let result: { matchScore: number; reasons: string[] };
+  try {
+    result = JSON.parse(contentString);
+  } catch (e: any) {
+    throw new Error(`Failed to parse structured output: ${e.message}`);
   }
-  
+
+  // Defensive validation
+  if (typeof result.matchScore !== "number" || !Array.isArray(result.reasons)) {
+    throw new Error("Invalid structured output format");
+  }
+
   return {
-    matchScore: Math.min(100, Math.max(0, Math.round(result.matchScore))), // Ensure score is 0-100
+    matchScore: Math.min(100, Math.max(0, Math.round(result.matchScore))),
     reasons: result.reasons
   };
 }
@@ -130,35 +158,19 @@ ${jobDescription}`;
 /**
  * Matches a resume with a job description using Anthropic's API
  */
-async function matchWithAnthropic(resumeText: string, jobDescription: string): Promise<MatchResult> {
-  // Define the prompt
-  const prompt = `
-<instructions>
-You are an expert hiring manager. Given a user's resume and a job description, determine how well they match.
+async function matchWithAnthropic(
+  resumeText: string,
+  jobDescription: string
+): Promise<MatchResult> {
+  const systemPrompt = [
+    "You are an expert hiring manager. Respond ONLY with valid JSON.",
+    "Format: {\"matchScore\": <0-100 integer>, \"reasons\": [\"reason1\", \"reason2\", \"reason3\"]}",
+    "Each reason must be 10 words or fewer.",
+    "Example: {\"matchScore\": 88, \"reasons\":[\"Strong TypeScript skills\",\"Deep React experience\",\"AWS cloud familiarity\"]}"
+  ].join("\n");
 
-Return a percentage match (0-100%) and a list of 3-5 short, specific reasons explaining the match.
+  const userPrompt = `# RESUME:\n${resumeText}\n\n# JOB DESCRIPTION:\n${jobDescription}`;
 
-Return JSON ONLY in this exact shape:
-{
-  "matchScore": <0-100 number>,
-  "reasons": [
-    "<specific reason 1>",
-    "<specific reason 2>",
-    "<specific reason 3>"
-  ]
-}
-
-Focus on specific, concrete skills and experience. Each reason should be 10 words or less.
-</instructions>
-
-# RESUME:
-${resumeText}
-
-# JOB DESCRIPTION:
-${jobDescription}
-`;
-
-  // Make the API request to Anthropic
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -167,44 +179,49 @@ ${jobDescription}
       "anthropic-version": "2023-06-01"
     } as HeadersInit,
     body: JSON.stringify({
-      model: "claude-3-sonnet-20240229",
-      max_tokens: 1000,
-      system: "You analyze resumes and job descriptions to determine match quality. Always respond with valid JSON.",
+      model: "claude-3-7-sonnet-20250219",
+      temperature: 0,
+      max_tokens: 100, // Sufficient for simple JSON response
+      // Removed stop_sequences - let Claude complete naturally
       messages: [
-        { role: "user", content: prompt }
+        { role: "system", content: systemPrompt }, // Consistent with OpenAI pattern
+        { role: "user", content: userPrompt }
       ]
     })
   });
 
   if (!response.ok) {
-    const errorData = await response.text();
-    throw new Error(`Anthropic API error: ${response.status} ${errorData}`);
+    const err = await response.text();
+    throw new Error(`Anthropic API error ${response.status}: ${err}`);
   }
 
-  const data = await response.json();
-  const content = data.content[0].text;
-  
-  // Extract JSON from potential text wrapper
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error("No valid JSON found in Anthropic response");
-  }
-  
+  const { content } = await response.json();
+  const raw = content?.[0]?.text;
+  if (!raw) throw new Error("No response from Anthropic");
+
+  // Robust JSON extraction (already implemented)
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("No valid JSON found in response");
+
+  let result: any;
   try {
-    const result = JSON.parse(jsonMatch[0]);
-    
-    // Validate the result
-    if (typeof result.matchScore !== 'number' || !Array.isArray(result.reasons)) {
-      throw new Error("Invalid response format from Anthropic");
-    }
-    
-    return {
-      matchScore: Math.min(100, Math.max(0, Math.round(result.matchScore))), // Ensure score is 0-100
-      reasons: result.reasons
-    };
-  } catch (error: any) {
-    throw new Error(`Failed to parse Anthropic response: ${error.message || 'Unknown error'}`);
+    result = JSON.parse(jsonMatch[0]);
+  } catch (e: any) {
+    throw new Error(`Failed to parse JSON: ${e.message}`);
   }
+
+  // Validation
+  if (
+    typeof result.matchScore !== "number" ||
+    !Array.isArray(result.reasons)
+  ) {
+    throw new Error("Response JSON does not match schema");
+  }
+
+  return {
+    matchScore: Math.min(100, Math.max(0, Math.round(result.matchScore))),
+    reasons: result.reasons
+  };
 }
 
 /**
@@ -215,12 +232,12 @@ export function createMatchCacheKey(resumeText: string, jobDescription: string):
   // Simple hash function for caching
   let hash = 0;
   const str = resumeText.substring(0, 200) + jobDescription.substring(0, 200); // Use first 200 chars of each
-  
+
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
     hash = hash & hash; // Convert to 32bit integer
   }
-  
+
   return 'match_' + Math.abs(hash).toString(16);
 }
