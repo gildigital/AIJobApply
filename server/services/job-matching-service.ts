@@ -93,7 +93,7 @@ export async function scoreJobFit(userId: number, job: JobListing): Promise<Matc
   try {
     // Get a match score and explanation from AI
     // console.log(`Scoring job fit for ${job.jobTitle} at ${job.company} using AI`);
-    const result = await matchResumeToJob(resumeText, job.description);
+    const result = await matchResumeToJob(userId, resumeText, job.description);
     
     // Cache the result
     matchCache.set(cacheKey, result);

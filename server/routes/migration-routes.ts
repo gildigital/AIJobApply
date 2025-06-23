@@ -9,12 +9,32 @@ import { runMigration as runJobLinksMigration } from '../migrations/add-job-link
 import { runMigration as runJobQueueJobIdOptionalMigration } from '../migrations/make-job-queue-jobid-optional.js';
 // @ts-ignore - JS migration file
 import { runMigration as runAppliedStatusToJobLinksMigration } from '../migrations/add-applied-status-to-job-links.js';
+// @ts-ignore - JS migration file
+import { runMigration as runAddApiUsageTracking } from '../migrations/add-api-usage-tracking.js';
 
 
 /**
  * Register routes for running database migrations
  */
 export function registerMigrationRoutes(app: Express) {
+  /**
+   * Endpoint to run the add api usage tracking migration
+   * This is a temporary endpoint for development and should be removed in production
+   */
+  app.post("/server-only/run-add-api-usage-tracking-migration", async (req: Request, res: Response) => {
+    try {
+      await runAddApiUsageTracking();
+      res.json({ success: true, message: "Add api usage tracking migration completed successfully" });
+    } catch (error) {
+      console.error("Migration failed:", error);
+      res.status(500).json({ 
+        success: false, 
+        message: "Migration failed", 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+    }
+  });
+
   /**
    * Endpoint to run the job preferences columns migration
    * This is a temporary endpoint for development and should be removed in production

@@ -27,25 +27,78 @@ if (!hasOpenAIKey && !hasAnthropicKey) {
 }
 
 /**
+ * Simple usage tracking function that logs to console
+ * In production, you could send this to analytics services like Mixpanel, Amplitude, etc.
+ */
+function logApiUsage(data: {
+  userId: number;
+  provider: string;
+  model: string;
+  operation: string;
+  responseTimeMs: number;
+  success: boolean;
+  estimatedCostCents?: number;
+  tokens?: { prompt: number; completion: number; total: number };
+  error?: string;
+  jobId?: number;
+}) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    ...data
+  };
+  
+  // Log to console with structured format for easy parsing
+  console.log(`[API_USAGE] ${JSON.stringify(logEntry)}`);
+  
+  // In production, you could also:
+  // - Send to analytics service (Mixpanel, Amplitude, etc.)
+  // - Write to a separate log file
+  // - Send to monitoring service (DataDog, New Relic, etc.)
+  // - Store in a time-series database
+}
+
+/**
  * Uses AI to match a resume with a job description and returns a match score and explanation
  * 
+ * @param userId The user ID for tracking purposes
  * @param resumeText The parsed text of the user's resume
  * @param jobDescription The job description to match against
+ * @param jobId Optional job ID for context
  * @returns Promise resolving to a match result with score and reasons
  */
-export async function matchResumeToJob(resumeText: string, jobDescription: string): Promise<MatchResult> {
+export async function matchResumeToJob(
+  userId: number,
+  resumeText: string, 
+  jobDescription: string,
+  jobId?: number
+): Promise<MatchResult> {
+  const startTime = Date.now();
+  
   // Try OpenAI first if key is available
   if (OPENAI_API_KEY) {
     try {
       // console.log("Using OpenAI for job matching");
-      return await matchWithOpenAI(resumeText, jobDescription);
+      return await matchWithOpenAI(userId, resumeText, jobDescription, startTime, jobId);
     } catch (error) {
       console.error("Error with OpenAI matching:", error);
+
+      // Log failed attempt
+      logApiUsage({
+        userId,
+        provider: "openai",
+        model: "gpt-4o-2024-08-06",
+        operation: "job_matching",
+        responseTimeMs: Date.now() - startTime,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        jobId
+      });
 
       // If Anthropic is available, try it as fallback
       if (ANTHROPIC_API_KEY) {
         // console.log("Falling back to Anthropic for job matching");
-        return await matchWithAnthropic(resumeText, jobDescription);
+        const fallbackStartTime = Date.now();
+        return await matchWithAnthropic(userId, resumeText, jobDescription, fallbackStartTime, jobId);
       }
 
       // If no fallback, re-throw the error
@@ -55,7 +108,7 @@ export async function matchResumeToJob(resumeText: string, jobDescription: strin
   // If no OpenAI key but Anthropic is available, use Anthropic
   else if (ANTHROPIC_API_KEY) {
     // console.log("Using Anthropic for job matching");
-    return await matchWithAnthropic(resumeText, jobDescription);
+    return await matchWithAnthropic(userId, resumeText, jobDescription, startTime, jobId);
   }
   // If no AI services are available, throw an error
   else {
@@ -67,8 +120,11 @@ export async function matchResumeToJob(resumeText: string, jobDescription: strin
  * Matches a resume with a job description using OpenAI's API
  */
 async function matchWithOpenAI(
+  userId: number,
   resumeText: string,
-  jobDescription: string
+  jobDescription: string,
+  startTime: number,
+  jobId?: number
 ): Promise<MatchResult> {
   const systemPrompt = `
 You are an expert hiring manager. Given a user's resume and a job description,
@@ -150,6 +206,31 @@ ${jobDescription}
     throw new Error("Invalid structured output format");
   }
 
+  // Log successful API usage
+  const tokens = {
+    prompt: Math.ceil(userPrompt.length / 4), // Rough estimate: 4 chars per token
+    completion: Math.ceil(contentString.length / 4),
+    total: 0
+  };
+  tokens.total = tokens.prompt + tokens.completion;
+  
+  // Estimate cost (OpenAI GPT-4o pricing: $0.0025 per 1K prompt tokens, $0.01 per 1K completion tokens)
+  const estimatedCostCents = Math.round(
+    (tokens.prompt / 1000) * 0.25 + (tokens.completion / 1000) * 1.0
+  );
+
+  logApiUsage({
+    userId,
+    provider: "openai",
+    model: "gpt-4o-2024-08-06",
+    operation: "job_matching",
+    responseTimeMs: Date.now() - startTime,
+    success: true,
+    estimatedCostCents,
+    tokens,
+    jobId
+  });
+
   return {
     matchScore: Math.min(100, Math.max(0, Math.round(result.matchScore))),
     reasons: result.reasons
@@ -160,8 +241,11 @@ ${jobDescription}
  * Matches a resume with a job description using Anthropic's API
  */
 async function matchWithAnthropic(
+  userId: number,
   resumeText: string,
-  jobDescription: string
+  jobDescription: string,
+  startTime: number,
+  jobId?: number
 ): Promise<MatchResult> {
   const systemPrompt = [
     "You are an expert hiring manager. Respond ONLY with valid JSON.",
@@ -217,6 +301,31 @@ async function matchWithAnthropic(
   ) {
     throw new Error("Response JSON does not match schema");
   }
+
+  // Log successful API usage
+  const tokens = {
+    prompt: Math.ceil(userPrompt.length / 4), // Rough estimate: 4 chars per token
+    completion: Math.ceil(raw.length / 4),
+    total: 0
+  };
+  tokens.total = tokens.prompt + tokens.completion;
+  
+  // Estimate cost (Anthropic Claude 3.5 Sonnet pricing: $0.003 per 1K prompt tokens, $0.015 per 1K completion tokens)
+  const estimatedCostCents = Math.round(
+    (tokens.prompt / 1000) * 0.3 + (tokens.completion / 1000) * 1.5
+  );
+
+  logApiUsage({
+    userId,
+    provider: "anthropic", 
+    model: "claude-3-7-sonnet-20250219",
+    operation: "job_matching",
+    responseTimeMs: Date.now() - startTime,
+    success: true,
+    estimatedCostCents,
+    tokens,
+    jobId
+  });
 
   return {
     matchScore: Math.min(100, Math.max(0, Math.round(result.matchScore))),

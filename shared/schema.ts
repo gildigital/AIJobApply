@@ -272,6 +272,42 @@ export type JobQueue = typeof jobQueue.$inferSelect;
 export type ApplicationPayload = typeof applicationPayloads.$inferSelect;
 export type InsertApplicationPayload = typeof applicationPayloads.$inferInsert;
 
+// API Usage Tracking Table
+export const apiUsage = pgTable("api_usage", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  apiProvider: text("api_provider").notNull(), // 'openai' or 'anthropic'
+  apiModel: text("api_model").notNull(), // e.g., 'gpt-4o-2024-08-06', 'claude-3-7-sonnet'
+  operation: text("operation").notNull(), // e.g., 'job_matching', 'resume_analysis'
+  promptTokens: integer("prompt_tokens"),
+  completionTokens: integer("completion_tokens"),
+  totalTokens: integer("total_tokens"),
+  estimatedCost: integer("estimated_cost_cents"), // Cost in cents for easier calculations
+  responseTimeMs: integer("response_time_ms"),
+  success: boolean("success").default(true).notNull(),
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata"), // Store additional context like jobId, matchScore, etc.
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+});
+
+export const insertApiUsageSchema = z.object({
+  userId: z.number(),
+  apiProvider: z.string(),
+  apiModel: z.string(),
+  operation: z.string(),
+  promptTokens: z.number().optional(),
+  completionTokens: z.number().optional(),
+  totalTokens: z.number().optional(),
+  estimatedCost: z.number().optional(),
+  responseTimeMs: z.number().optional(),
+  success: z.boolean().optional().default(true),
+  errorMessage: z.string().optional(),
+  metadata: z.any().optional(),
+});
+
+export type InsertApiUsage = z.infer<typeof insertApiUsageSchema>;
+export type ApiUsage = typeof apiUsage.$inferSelect;
+
 // User Profile schema with additional fields required by the Profile Management feature
 export const userProfiles = pgTable("user_profiles", {
   id: serial("id").primaryKey(),
