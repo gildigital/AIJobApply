@@ -49,7 +49,7 @@ export async function down(db) {
 /**
  * Run the migration automatically
  */
-async function runMigration() {
+export async function runMigration() {
   console.log("🚀 Running API usage tracking migration...");
   try {
     await up(db);
