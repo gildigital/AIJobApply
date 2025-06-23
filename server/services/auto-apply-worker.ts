@@ -353,9 +353,11 @@ async function processQueuedJobsWithErrorHandling(): Promise<void> {
  * Process the next batch of queued jobs
  */
 async function processQueuedJobs(): Promise<void> {
-  // Get next batch of pending jobs
+  console.log(`[DEBUG] 🔍 Job processor tick - checking for jobs...`);
+  
   const pendingJobs = await storage.getNextJobsFromQueue(DEFAULT_BATCH_SIZE);
-
+  console.log(`[DEBUG] Found ${pendingJobs.length} pending jobs`);
+  
   if (pendingJobs.length === 0) {
     return; // No jobs to process
   }
