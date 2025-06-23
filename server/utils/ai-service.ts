@@ -108,6 +108,7 @@ ${jobDescription}
       response_format: {
         type: "json_schema",
         json_schema: {
+          name: "job_match_result",
           strict: true,
           schema: {
             type: "object",
@@ -181,10 +182,9 @@ async function matchWithAnthropic(
     body: JSON.stringify({
       model: "claude-3-7-sonnet-20250219",
       temperature: 0,
-      max_tokens: 100, // Sufficient for simple JSON response
-      // Removed stop_sequences - let Claude complete naturally
+      max_tokens: 100,
+      system: systemPrompt,
       messages: [
-        { role: "system", content: systemPrompt }, // Consistent with OpenAI pattern
         { role: "user", content: userPrompt }
       ]
     })
