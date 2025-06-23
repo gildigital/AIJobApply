@@ -17,7 +17,7 @@ import {
 import { cleanupJobLinks } from '../utils/cleanup-job-links.js';
 import { JobQueue, JobTracker, User, jobQueue } from "@shared/schema.js";
 import { db } from "../db.js";
-import { eq } from "drizzle-orm";
+import { eq, and, lt } from "drizzle-orm";
 import { processQueuedApplication } from "./job-application-queue.js";
 
 // 🎯 INTELLIGENT WORK MANAGEMENT CONFIGURATION
@@ -80,6 +80,9 @@ let workerStartTime = new Date();
 
 // Track the last calendar day (UTC) when we ran cleanup
 let lastCleanupDate = getUTCDateString(new Date());
+
+const STALE_JOB_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // Every 5 minutes
+const STALE_JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 function getUTCDateString(d: Date): string {
   return d.toISOString().slice(0, 10);  // e.g. "2025-06-13"
@@ -180,6 +183,9 @@ export function startAutoApplyWorker(): void {
 
   // Set up process-level error handlers
   setupGlobalErrorHandlers();
+
+  // Add to startAutoApplyWorker():
+  const cleanupInterval = setInterval(cleanupStaleJobs, STALE_JOB_CLEANUP_INTERVAL_MS);
 
   console.log(`[Work Manager] ✅ Started with intelligent intervals:`);
   console.log(`  - Work Coordinator: every ${WORK_COORDINATOR_INTERVAL_MS / 60000} minutes`);
@@ -863,6 +869,36 @@ function logWorkerHeartbeat(): void {
     console.log(`[Work Manager] 📊 Active users: ${activeUsers.length} (${activeUsers.map(s => 
       `User ${s.userId}: ${s.isSearchingForJobs ? 'searching' : ''}${s.isProcessingApplications ? 'processing' : ''}`
     ).join(', ')})`);
+  }
+}
+
+async function cleanupStaleJobs(): Promise<void> {
+  const staleThreshold = new Date(Date.now() - STALE_JOB_TIMEOUT_MS);
+  
+  const staleJobs = await db
+    .select()
+    .from(jobQueue)
+    .where(
+      and(
+        eq(jobQueue.status, 'processing'),
+        lt(jobQueue.updatedAt, staleThreshold),
+        lt(jobQueue.attemptCount, 3) // Don't retry jobs that failed multiple times
+      )
+    );
+
+  for (const job of staleJobs) {
+    console.log(`[Stale Job Recovery] Resetting stuck job ${job.id} (stuck for ${Math.round((Date.now() - job.updatedAt.getTime()) / 60000)}m)`);
+    
+    await storage.updateQueuedJob(job.id, {
+      status: 'pending',
+      attemptCount: job.attemptCount + 1,
+      error: `Recovered from stale processing state after ${Math.round((Date.now() - job.updatedAt.getTime()) / 60000)} minutes`,
+      updatedAt: new Date()
+    });
+  }
+  
+  if (staleJobs.length > 0) {
+    console.log(`[Stale Job Recovery] ✅ Recovered ${staleJobs.length} stale jobs`);
   }
 }
 

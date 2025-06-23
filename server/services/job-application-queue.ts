@@ -190,34 +190,80 @@ export async function processQueuedApplication(queuedJobId: number): Promise<'su
 }
 
 /**
- * Submit to Playwright worker with callback configuration
- * 
- * This sends job to worker and immediately gets 202 Accepted response.
- * Worker calls back to report final status asynchronously.
+ * Wake up the Playwright worker and wait for it to be ready
+ */
+async function wakeUpWorker(workerUrl: string): Promise<boolean> {
+  const MAX_WAKE_ATTEMPTS = 6; // Try for up to 3 minutes
+  const WAKE_DELAYS = [5000, 10000, 15000, 20000, 30000, 30000]; // Progressive delays
+  
+  console.log('🏓 Pinging worker to wake it up...');
+  
+  for (let attempt = 0; attempt < MAX_WAKE_ATTEMPTS; attempt++) {
+    try {
+      const pingStart = Date.now();
+      const response = await fetch(`${workerUrl}/status`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(10000) // 10 second timeout per ping
+      });
+      
+      const pingTime = Date.now() - pingStart;
+      
+      if (response.ok) {
+        const status = await response.json();
+        const isReady = !status.rateLimiter?.systemHealth?.isThrottled && 
+                        status.queueHealth?.active < status.queueHealth?.maxConcurrent;
+        
+        if (isReady) {
+          console.log(`✅ Worker is awake and ready! (${pingTime}ms response time)`);
+          return true;
+        } else {
+          console.log(`⏳ Worker responding but busy (attempt ${attempt + 1}/${MAX_WAKE_ATTEMPTS}, ${pingTime}ms)`);
+        }
+      } else {
+        console.log(`🥶 Worker still starting up: ${response.status} (attempt ${attempt + 1}/${MAX_WAKE_ATTEMPTS})`);
+      }
+      
+    } catch (error) {
+      console.log(`🔄 Wake ping failed (attempt ${attempt + 1}/${MAX_WAKE_ATTEMPTS}): ${error.message}`);
+    }
+    
+    // Wait before next attempt (unless it's the last one)
+    if (attempt < MAX_WAKE_ATTEMPTS - 1) {
+      const delay = WAKE_DELAYS[attempt];
+      console.log(`⏳ Waiting ${delay/1000}s before next ping...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  console.log('❌ Worker did not become ready after all wake attempts');
+  return false;
+}
+
+/**
+ * Enhanced submission with worker wake-up
  */
 async function submitToPlaywrightWorker(payload: any): Promise<'success' | 'skipped' | 'error'> {
   try {
     const workerUrl = process.env.VITE_PLAYWRIGHT_WORKER_URL;
-    const mainServerUrl = process.env.VITE_BACKEND_URL; // For callbacks
+    const mainServerUrl = process.env.VITE_BACKEND_URL;
     const sharedSecret = process.env.WORKER_SHARED_SECRET;
     
-    if (!workerUrl) {
-      throw new Error("No Playwright worker URL configured");
-    }
-    
-    if (!mainServerUrl) {
-      throw new Error("No backend URL configured for callbacks");
-    }
-    
-    if (!sharedSecret) {
-      throw new Error("No worker shared secret configured");
+    if (!workerUrl || !mainServerUrl || !sharedSecret) {
+      throw new Error("Missing worker configuration");
     }
 
     const completeWorkerUrl = workerUrl.startsWith("http") ? workerUrl : `https://${workerUrl}`;
 
-    // Enhanced payload with callback information
+    // 🏓 STEP 1: Wake up the worker first!
+    console.log(`🏓 Waking up worker before job submission...`);
+    const isAwake = await wakeUpWorker(completeWorkerUrl);
+    
+    if (!isAwake) {
+      throw new Error("Worker failed to wake up after multiple attempts");
+    }
+
+    // 🎯 STEP 2: Submit the actual job (worker is now ready)
     const workerPayload = {
-      // Original job data
       user: {
         id: payload.user.id,
         name: payload.user.name,
@@ -232,20 +278,18 @@ async function submitToPlaywrightWorker(payload: any): Promise<'success' | 'skip
         fileContent: payload.resume.fileContent,
       } : null,
       profile: payload.profile,
-          job: {
-      jobTitle: payload.job.jobTitle,
-      company: payload.job.company,
-      description: payload.job.description,
-      applyUrl: payload.job.applyUrl,
-      location: payload.job.location,
-      source: payload.job.source,
-      externalJobId: payload.job.externalJobId,
-      _jobLinkId: payload.job._jobLinkId, // 🐛 BUG FIX: Preserve job link ID for status updates
-    },
+      job: {
+        jobTitle: payload.job.jobTitle,
+        company: payload.job.company,
+        description: payload.job.description,
+        applyUrl: payload.job.applyUrl,
+        location: payload.job.location,
+        source: payload.job.source,
+        externalJobId: payload.job.externalJobId,
+        _jobLinkId: payload.job._jobLinkId,
+      },
       matchScore: payload.matchScore,
       formData: payload.formData,
-      
-      // NEW: Callback configuration
       callback: {
         url: `${mainServerUrl}/api/worker/update-job-status`,
         secret: sharedSecret,
@@ -257,7 +301,6 @@ async function submitToPlaywrightWorker(payload: any): Promise<'success' | 'skip
 
     console.log(`🔄 Submitting application to Playwright worker (async): ${payload.job.jobTitle} at ${payload.job.company}`);
 
-    // Make the request with short timeout - just for handoff confirmation
     const response = await fetch(`${completeWorkerUrl}/submit`, {
       method: "POST",
       headers: {
@@ -272,7 +315,7 @@ async function submitToPlaywrightWorker(payload: any): Promise<'success' | 'skip
       return 'success';
     }
     
-    throw new Error(`Worker rejected job: ${response.status}`);
+    throw new Error(`Worker rejected job even after wake-up: ${response.status}`);
 
   } catch (error) {
     console.error('Error submitting to Playwright worker:', error);
